@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.5)
+project(LEDServer)
+file(GLOB srcs *.c *.cpp)
+add_executable(ledserve ${srcs})
+target_link_libraries(ledserve pthread boost_system)

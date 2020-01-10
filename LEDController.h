@@ -10,6 +10,8 @@ public:
   
 private:
 
+  void read_header();
+  
   boost::asio::ip::tcp::socket sock_;
 };
   

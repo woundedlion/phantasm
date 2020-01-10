@@ -10,6 +10,6 @@ LEDController::~LEDController() {
   sock_.close();
 }
 
-LEDController::read_header() {
+void LEDController::read_header() {
 
 }

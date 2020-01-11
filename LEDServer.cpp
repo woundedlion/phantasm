@@ -1,8 +1,8 @@
 #include "LEDServer.h"
+#include <boost/log/trivial.hpp>
+#define LOG(X) BOOST_LOG_TRIVIAL(X)
 
-#include <iostream>
-#include "boost/asio.hpp"
-
+using namespace boost::asio;
 using namespace boost::asio::ip;
 
 namespace {
@@ -10,39 +10,82 @@ namespace {
 }
 
 LEDServer::LEDServer() :
-  accept_sock_(io_, tcp::endpoint(tcp::v4(), 5050))
+  accept_sock_(main_io_, tcp::endpoint(tcp::v4(), 5050))
 {
+
 }
 
 LEDServer::~LEDServer() {
-  io_thread_.join();
+  LOG(info) << "Shutting down...";        
+  for (auto&& w : workers_) { 
+    w->thread_.join();
+  }
+  LOG(debug) << "worker threads joined";      
+  main_io_thread_.join();
+  LOG(info) << "Shutdown complete";
 }
+
+LEDServer::IOThread::IOThread() :
+  guard_(make_work_guard(ctx_)),
+  thread_([this]() {
+	    LOG(info) << "IO thread start: " << std::hex << std::this_thread::get_id();
+	    ctx_.run();
+	    LOG(info) << "IO thread exit: " << std::hex << std::this_thread::get_id();
+	  })
+{}
 
 void LEDServer::start() {
-  start_accept();
-  io_thread_ = std::thread([this]() { io_.run(); });  
-}
-
-void LEDServer::start_accept() {
-  accept_sock_.async_accept(std::bind(&LEDServer::handle_accept,
-				      this, std::placeholders::_1, std::placeholders::_2));
-}
-
-void LEDServer::handle_accept(const std::error_code& ec,
-			      tcp::socket client_sock)
-{
-  if (!ec) {
-    std::cout << "Connection accepted: "
-      	      << client_sock.remote_endpoint() << " -> "
-	      << client_sock.local_endpoint() << std::endl;
-    controllers_.emplace_back(std::move(client_sock));
-  } else {
-    std::cout << ec.message() << std::endl;
+  LOG(info) << "Starting server";
+  accept();
+  int num_client_io_threads = std::max((uint)1, std::thread::hardware_concurrency() - 1);
+  for (int i = 0; i < num_client_io_threads; ++i) {
+    workers_.emplace_back(new IOThread());
   }
-  start_accept();
+  main_io_thread_ = std::thread([this]() { main_io_.run(); });
 }
+
+void LEDServer::stop() {
+  for (auto&& w : workers_) {
+    w->guard_.reset();
+    accept_sock_.close();
+  }
+}
+
+LEDServer::IOThread& LEDServer::io_schedule() {
+  assert(workers_.size());
+  return **std::min_element(workers_.begin(), workers_.end(),
+			   [](const auto& a, const auto& b) {
+			     return a->clients_.size() < b->clients_.size();
+			   });
+}
+
+void LEDServer::accept() {
+  accept_sock_
+    .async_accept([this](const std::error_code& ec, tcp::socket client_sock) {
+		    if (!ec) {
+		      LOG(info) << "Connection accepted: "
+				<< client_sock.remote_endpoint() << " -> "
+				<< client_sock.local_endpoint();
+		      auto& io = io_schedule();
+		      io.clients_.emplace_back(std::move(client_sock), io.ctx_);
+		      accept();
+		    } else {
+		      if (ec != std::errc::operation_canceled) {
+			LOG(error) << ec.message();
+		      } else {
+			LOG(debug) << ec.message();
+		      }
+		    }
+		  });
+}
+
+void LEDServer::send_frame(Effect& e)
+{}
+
 
 int main(int argc, char *argv[]) {
   LEDServer server;
   server.start();
+  sleep(3);
+  server.stop();
 }

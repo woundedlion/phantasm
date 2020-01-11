@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
+set(CMAKE_BUILD_TYPE Debug)
 project(LEDServer)
 file(GLOB srcs *.c *.cpp)
 add_executable(ledserve ${srcs})
-target_link_libraries(ledserve pthread boost_system)
+target_link_libraries(ledserve boost_system boost_log pthread)
+target_compile_options(ledserve PUBLIC -DBOOST_LOG_DYN_LINK)

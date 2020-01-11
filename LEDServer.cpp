@@ -9,22 +9,6 @@ namespace {
   const char* TAG = "LEDServer";
 }
 
-LEDServer::LEDServer() :
-  accept_sock_(main_io_, tcp::endpoint(tcp::v4(), 5050))
-{
-
-}
-
-LEDServer::~LEDServer() {
-  LOG(info) << "Shutting down...";        
-  for (auto&& w : workers_) { 
-    w->thread_.join();
-  }
-  LOG(debug) << "worker threads joined";      
-  main_io_thread_.join();
-  LOG(info) << "Shutdown complete";
-}
-
 LEDServer::IOThread::IOThread() :
   guard_(make_work_guard(ctx_)),
   thread_([this]() {
@@ -34,8 +18,21 @@ LEDServer::IOThread::IOThread() :
 	  })
 {}
 
+LEDServer::LEDServer() :
+  shutdown_(false),
+  signals_(main_io_, SIGINT, SIGTERM),
+  accept_sock_(main_io_, tcp::endpoint(tcp::v4(), 5050))
+{
+
+}
+
+LEDServer::~LEDServer() {
+  stop();
+}
+
 void LEDServer::start() {
   LOG(info) << "Starting server";
+  subscribe_signals();
   accept();
   int num_client_io_threads = std::max((uint)1, std::thread::hardware_concurrency() - 1);
   for (int i = 0; i < num_client_io_threads; ++i) {
@@ -45,18 +42,26 @@ void LEDServer::start() {
 }
 
 void LEDServer::stop() {
+  LOG(info) << "Stopping server...";        
   for (auto&& w : workers_) {
     w->guard_.reset();
-    accept_sock_.close();
   }
+  for (auto&& w : workers_) { 
+    w->thread_.join();
+  }
+  LOG(debug) << "worker threads joined";      
+  accept_sock_.close();
+  signals_.cancel();
+  main_io_thread_.join();
+  LOG(info) << "Server stopped";
 }
 
 LEDServer::IOThread& LEDServer::io_schedule() {
   assert(workers_.size());
   return **std::min_element(workers_.begin(), workers_.end(),
-			   [](const auto& a, const auto& b) {
-			     return a->clients_.size() < b->clients_.size();
-			   });
+			    [](const auto& a, const auto& b) {
+			      return a->clients_.size() < b->clients_.size();
+			    });
 }
 
 void LEDServer::accept() {
@@ -79,6 +84,21 @@ void LEDServer::accept() {
 		  });
 }
 
+void LEDServer::subscribe_signals()
+{
+  signals_
+    .async_wait([this](const std::error_code& ec,
+			    int signal_number)
+		     {
+		       if (!ec) {
+			 LOG(info) << "Received signal " << signal_number;
+			 shutdown_ = true;
+		       } else {
+			 LOG(error) << "Signal listen error: " << ec.message();
+		       }
+		     });
+}
+
 void LEDServer::send_frame(Effect& e)
 {}
 
@@ -86,6 +106,8 @@ void LEDServer::send_frame(Effect& e)
 int main(int argc, char *argv[]) {
   LEDServer server;
   server.start();
-  sleep(3);
-  server.stop();
+  while (!server.is_shutdown()) {
+    
+  }
+  return 0;
 }

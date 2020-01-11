@@ -14,7 +14,8 @@ public:
   ~LEDServer();
   void start();
   void stop();
-
+  bool is_shutdown() { return shutdown_; }
+  
   template <typename T>
   void run_effect(size_t seconds) {
     T effect;
@@ -39,9 +40,12 @@ private:
   
   IOThread& io_schedule();
   void accept();
+  void subscribe_signals();
   void send_frame(Effect& e);
   
+  bool shutdown_;
   boost::asio::io_context main_io_;
+  boost::asio::signal_set signals_;
   std::thread main_io_thread_;
   boost::asio::ip::tcp::acceptor accept_sock_;
   boost::asio::ip::tcp::endpoint accept_ep_;

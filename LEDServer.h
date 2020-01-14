@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iostream>
 #include <vector>
 #include <thread>
 #include <chrono>
@@ -14,6 +15,7 @@ public:
   ~LEDServer();
   void start();
   void stop();
+  void post_connection_error(LEDController& client); 
   bool is_shutdown() { return shutdown_; }
   
   template <typename T>
@@ -21,9 +23,10 @@ public:
     T effect;
     auto start = std::chrono::steady_clock::now();
     auto end = start + std::chrono::seconds(seconds);
-    while (std::chrono::steady_clock::now() < start) {
+    while (!is_shutdown() && std::chrono::steady_clock::now() < end) {
       effect.draw_frame();
       send_frame(effect);
+      sleep(1);
     }
   }
   
@@ -50,4 +53,5 @@ private:
   boost::asio::ip::tcp::acceptor accept_sock_;
   boost::asio::ip::tcp::endpoint accept_ep_;
   std::vector<std::shared_ptr<IOThread>> workers_;
+  uint32_t client_count_;
 };

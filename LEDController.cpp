@@ -15,6 +15,7 @@ LEDController::LEDController(LEDServer& server, tcp::socket sock, io_context& io
   sock_(std::move(sock)),
   io_(io)
 {
+  sock_.set_option(tcp::no_delay(true));
   read_header();
 }
 
@@ -40,10 +41,24 @@ void LEDController::read_header() {
 	     [this](const std::error_code& ec, std::size_t bytes) {
 	       if (!ec && bytes) {
 		 LOG(info) << "Header: ID = " << id_str();
-		 read_header();
+		 read_ready();
 	       } else {
 		 LOG(error) << "Read Error: " << ec.message();
 		 server_.get().post_connection_error(*this);
+	       }
+	     });
+}
+
+void LEDController::read_ready() {
+  unsigned char ready;
+  async_read(sock_, buffer(&ready, sizeof(ready)),
+	     [this](const std::error_code& ec, std::size_t bytes) {
+	       if (!ec && bytes) {
+		 LOG(debug) << "Received READY from client: " << id_str();
+		 server_.get().post_client_ready();
+	       } else {
+		 LOG(error) << "Read Error: " << ec.message();
+		 server_.get().post_connection_error(*this);		 
 	       }
 	     });
 }

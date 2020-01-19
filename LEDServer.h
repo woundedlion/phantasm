@@ -16,19 +16,11 @@ public:
   void start();
   void stop();
   void post_connection_error(LEDController& client); 
+  void post_client_ready(); 
   bool is_shutdown() { return shutdown_; }
   
   template <typename T>
-  void run_effect(size_t seconds) {
-    T effect;
-    auto start = std::chrono::steady_clock::now();
-    auto end = start + std::chrono::seconds(seconds);
-    while (!is_shutdown() && std::chrono::steady_clock::now() < end) {
-      effect.draw_frame();
-      send_frame(effect);
-      sleep(1);
-    }
-  }
+  void run_effect(size_t seconds);
   
 private:
 
@@ -44,7 +36,8 @@ private:
   IOThread& io_schedule();
   void accept();
   void subscribe_signals();
-  void send_frame(Effect& e);
+  bool clients_ready();
+  void send_frame(boost::asio::const_buffer buf);
   
   bool shutdown_;
   boost::asio::io_context main_io_;
@@ -54,4 +47,19 @@ private:
   boost::asio::ip::tcp::endpoint accept_ep_;
   std::vector<std::shared_ptr<IOThread>> workers_;
   uint32_t client_count_;
+  int client_ready_count_;
 };
+
+template <typename T>
+void LEDServer::run_effect(size_t seconds) {
+  T effect;
+  auto start = std::chrono::steady_clock::now();
+  auto end = start + std::chrono::seconds(seconds);
+  effect.draw_frame();
+  while (!is_shutdown() && std::chrono::steady_clock::now() < end) {
+    if (clients_ready()) {
+      send_frame(effect.buf());
+      effect.draw_frame();
+    }
+  }
+}

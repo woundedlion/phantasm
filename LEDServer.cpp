@@ -18,11 +18,14 @@ LEDServer::IOThread::IOThread() :
 	  })
 {}
 
+/////////////////////////////////////////////////////////////////////////////////////////
+
 LEDServer::LEDServer() :
   shutdown_(false),
   signals_(main_io_, SIGINT, SIGTERM),
   accept_sock_(main_io_, tcp::endpoint(tcp::v4(), 5050)),
-  client_count_(0)
+  client_count_(0),
+  client_ready_count_(0)
 {
 
 }
@@ -74,6 +77,10 @@ void LEDServer::post_connection_error(LEDController& client) {
   }
 }
 
+void LEDServer::post_client_ready() {
+  client_ready_count_++;
+}
+
 LEDServer::IOThread& LEDServer::io_schedule() {
   assert(workers_.size());
   return **std::min_element(workers_.begin(), workers_.end(),
@@ -119,21 +126,25 @@ void LEDServer::subscribe_signals()
 		     });
 }
 
-void LEDServer::send_frame(Effect& e) {
+bool LEDServer::clients_ready() {
+  return client_ready_count_ >= client_count_;
+}
+
+void LEDServer::send_frame(const_buffer buf) {
   for (auto&& w : workers_) {
     for (auto&& c : w->clients_) {
       LOG(debug) << "Sending frame to client id " << std::hex << c.id();
-      post(w->ctx_, [&]() { c.send(e.buf()); });
+      post(w->ctx_, [&]() { c.send(buf); });
     }
   }
+  client_ready_count_ = 0;
 }
-
 
 int main(int argc, char *argv[]) {
   LEDServer server;
   server.start();
   while (!server.is_shutdown()) {
-    server.run_effect<Test>(300);
+    server.run_effect<Test<144>>(300);
   }
   return 0;
 }

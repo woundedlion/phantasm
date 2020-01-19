@@ -23,6 +23,7 @@ public:
 private:
 
   void read_header();
+  void read_ready();
 
   std::reference_wrapper<LEDServer> server_;
   boost::asio::ip::tcp::socket sock_;

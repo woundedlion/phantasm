@@ -1,8 +1,10 @@
 #pragma once
 #include <sstream>
 #include "asio.hpp"
+#include "driver/timer.h"
 #include "App.h"
 #include "WifiClient.h"
+
 
 template <typename T>
 std::string to_string(const T& t) {
@@ -57,8 +59,8 @@ private:
 		READY,
 	};
 
-	static const uint16_t LED_TIMER_GROUP = TIMER_GROUP_0;
-	static const uint16_t LED_TIMER = TIMER_0;
+	static const timer_group_t LED_TIMER_GROUP = TIMER_GROUP_0;
+	static const timer_idx_t LED_TIMER = TIMER_0;
 	static const uint16_t LED_TIMER_DIVIDER = 17361;
 
 	State state_;

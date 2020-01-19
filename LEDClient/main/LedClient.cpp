@@ -2,7 +2,6 @@
 #include <thread>
 #include "LedClient.h"
 #include "esp_log.h"
-#include "driver/timer.h"
 
 ESP_EVENT_DEFINE_BASE(LED_EVENT);
 
@@ -110,11 +109,10 @@ void LEDClient::start_led_timer() {
 	cfg.counter_dir = TIMER_COUNT_UP;
 	cfg.auto_reload = TIMER_AUTORELOAD_EN;
 	cfg.divider = LED_TIMER_DIVIDER;
-	cfg.clk_src = TIMER_SRC_CLK_APB;
 
 	timer_init(LED_TIMER_GROUP, LED_TIMER, &cfg);
 	timer_set_counter_value(LED_TIMER_GROUP, LED_TIMER, 0);
-	timer_set_alarm_value(LED_TIMER_GROUP, LED_TIMER, timer_interval_sec * TIMER_SCALE);
+	timer_set_alarm_value(LED_TIMER_GROUP, LED_TIMER, 1);
 	timer_enable_intr(LED_TIMER_GROUP, LED_TIMER);
 	timer_isr_register(LED_TIMER_GROUP, LED_TIMER, 
 		LEDClient::handle_led_timer_ISR, (void*)LED_TIMER, ESP_INTR_FLAG_IRAM, NULL);

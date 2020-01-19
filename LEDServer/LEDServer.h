@@ -5,7 +5,7 @@
 #include <thread>
 #include <chrono>
 #include <boost/asio.hpp>
-#include "LEDController.h"
+#include "Connection.h"
 #include "Effect.h"
 
 class LEDServer {
@@ -15,7 +15,7 @@ public:
   ~LEDServer();
   void start();
   void stop();
-  void post_connection_error(LEDController& client); 
+  void post_connection_error(Connection& client); 
   void post_client_ready(); 
   bool is_shutdown() { return shutdown_; }
   
@@ -30,7 +30,7 @@ private:
     boost::asio::io_context ctx_;
     boost::asio::executor_work_guard<boost::asio::io_context::executor_type> guard_;
     std::thread thread_;
-    std::vector<LEDController> clients_;
+    std::vector<Connection> clients_;
   };
   
   IOThread& io_schedule();

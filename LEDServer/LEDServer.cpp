@@ -60,7 +60,7 @@ void LEDServer::stop() {
   LOG(info) << "Server stopped";
 }
 
-void LEDServer::post_connection_error(LEDController& client) {
+void LEDServer::post_connection_error(Connection& client) {
   if (workers_.size() && client_count_) {
     for (auto&& w : workers_) {
       LOG(info) << "Searching for 0x" << std::hex << client.id();

@@ -1,7 +1,7 @@
 #include <sstream>
 #include <iomanip>
 
-#include "LEDController.h"
+#include "Connection.h"
 #include "LEDServer.h"
 #include <boost/log/trivial.hpp>
 #define LOG(X) BOOST_LOG_TRIVIAL(X)
@@ -10,7 +10,7 @@ using namespace boost::asio;
 using namespace boost::asio::ip;
 
 
-LEDController::LEDController(LEDServer& server, tcp::socket sock, io_context& io) :
+Connection::Connection(LEDServer& server, tcp::socket sock, io_context& io) :
   server_(server),
   sock_(std::move(sock)),
   io_(io)
@@ -19,24 +19,24 @@ LEDController::LEDController(LEDServer& server, tcp::socket sock, io_context& io
   read_header();
 }
 
-LEDController::LEDController(LEDController&& c) :
+Connection::Connection(Connection&& c) :
   server_(c.server_),
   sock_(std::move(c.sock_)),
   io_(c.io_)
 {}
 
-LEDController::~LEDController() {
+Connection::~Connection() {
   sock_.close();
 }
 
-LEDController& LEDController::operator=(LEDController&& c) {
+Connection& Connection::operator=(Connection&& c) {
   server_ = c.server_;
   sock_ = std::move(c.sock_);
   io_ = c.io_;
   return *this;
 }
 
-void LEDController::read_header() {
+void Connection::read_header() {
   async_read(sock_, buffer(id_, sizeof(id_)),
 	     [this](const std::error_code& ec, std::size_t bytes) {
 	       if (!ec && bytes) {
@@ -49,7 +49,7 @@ void LEDController::read_header() {
 	     });
 }
 
-void LEDController::read_ready() {
+void Connection::read_ready() {
   unsigned char ready;
   async_read(sock_, buffer(&ready, sizeof(ready)),
 	     [this](const std::error_code& ec, std::size_t bytes) {
@@ -63,7 +63,7 @@ void LEDController::read_ready() {
 	     });
 }
 
-void LEDController::send(const const_buffer& buf) {
+void Connection::send(const const_buffer& buf) {
   start_ = std::chrono::steady_clock::now();
   async_write(sock_, buf,
 	      [this](const std::error_code& ec, std::size_t bytes) {
@@ -79,19 +79,7 @@ void LEDController::send(const const_buffer& buf) {
   
 }
 
-void LEDController::send_sync() { 
-  async_write(sock_, buffer("SYNC", 4),
-	      [this](const std::error_code& ec, std::size_t bytes) {
-		if (!ec) {
-		  LOG(info) << "SYNC sent to " << id_str();
-		} else {
-		  LOG(error) << "Write Error: " << ec.message();
-		  server_.get().post_connection_error(*this);
-       		}
-	      });  
-}
-
-std::string LEDController::id_str() {
+std::string Connection::id_str() {
   std::stringstream ss;
   ss << std::setfill('0') << std::hex
      << std::setw(2) << static_cast<int>(id_[0]) << "-"

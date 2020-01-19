@@ -5,19 +5,18 @@
 
 class LEDServer;
 
-class LEDController {
+class Connection {
 public:
 
-  LEDController(LEDController&& c);
-  LEDController(LEDServer& server,
+  Connection(Connection&& c);
+  Connection(LEDServer& server,
 		boost::asio::ip::tcp::socket sock,
 		boost::asio::io_context& io);
-  ~LEDController();
-  bool operator==(const LEDController& c) { return id_ == c.id_; }
-  LEDController& operator=(LEDController&& c);
+  ~Connection();
+  bool operator==(const Connection& c) { return id_ == c.id_; }
+  Connection& operator=(Connection&& c);
   const uint8_t* id() { return id_; }
   void send(const boost::asio::const_buffer& buf);
-  void send_sync();
   std::string id_str();
   
 private:

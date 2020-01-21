@@ -10,29 +10,32 @@ using namespace boost::asio;
 using namespace boost::asio::ip;
 
 
-Connection::Connection(LEDServer& server, tcp::socket sock, io_context& io) :
+Connection::Connection(LEDServer& server,
+		       tcp::socket& sock,
+		       std::shared_ptr<IOThread> io) :
   server_(server),
   sock_(std::move(sock)),
-  io_(io)
+  io_(io),
+  ready_(true)
 {
-  sock_.set_option(tcp::no_delay(true));
   read_header();
 }
 
 Connection::Connection(Connection&& c) :
   server_(c.server_),
   sock_(std::move(c.sock_)),
-  io_(c.io_)
+  io_(std::move(c.io_))
 {}
 
 Connection::~Connection() {
+  sock_.shutdown(tcp::socket::shutdown_both);
   sock_.close();
 }
 
 Connection& Connection::operator=(Connection&& c) {
   server_ = c.server_;
   sock_ = std::move(c.sock_);
-  io_ = c.io_;
+  io_ = std::move(c.io_);
   return *this;
 }
 
@@ -55,7 +58,7 @@ void Connection::read_ready() {
 	     [this](const std::error_code& ec, std::size_t bytes) {
 	       if (!ec && bytes) {
 		 LOG(debug) << "Received READY from client: " << id_str();
-		 server_.get().post_client_ready();
+		 server_.get().post_client_ready(*this);
 	       } else {
 		 LOG(error) << "Read Error: " << ec.message();
 		 server_.get().post_connection_error(*this);		 
@@ -79,7 +82,7 @@ void Connection::send(const const_buffer& buf) {
   
 }
 
-std::string Connection::id_str() {
+std::string Connection::id_str() const {
   std::stringstream ss;
   ss << std::setfill('0') << std::hex
      << std::setw(2) << static_cast<int>(id_[0]) << "-"
@@ -89,4 +92,8 @@ std::string Connection::id_str() {
      << std::setw(2) << static_cast<int>(id_[4]) << "-"
      << std::setw(2) << static_cast<int>(id_[5]);
   return ss.str();
+}
+
+boost::asio::io_context& Connection::ctx() {
+  return io_->ctx_;
 }

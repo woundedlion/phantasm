@@ -4,9 +4,18 @@
 #include <vector>
 #include <thread>
 #include <chrono>
+#include <unordered_map>
 #include <boost/asio.hpp>
 #include "Connection.h"
 #include "Effect.h"
+
+struct IOThread {
+  IOThread();
+  
+  boost::asio::io_context ctx_;
+  boost::asio::executor_work_guard<boost::asio::io_context::executor_type> guard_;
+  std::thread thread_;
+};
 
 class LEDServer {
 public:
@@ -16,29 +25,20 @@ public:
   void start();
   void stop();
   void post_connection_error(Connection& client); 
-  void post_client_ready(); 
+  void post_client_ready(Connection& client); 
   bool is_shutdown() { return shutdown_; }
   
   template <typename T>
   void run_effect(size_t seconds);
   
 private:
-
-  struct IOThread {
-    IOThread();
-
-    boost::asio::io_context ctx_;
-    boost::asio::executor_work_guard<boost::asio::io_context::executor_type> guard_;
-    std::thread thread_;
-    std::vector<Connection> clients_;
-  };
   
-  IOThread& io_schedule();
+  std::shared_ptr<IOThread> io_schedule();
   void accept();
   void subscribe_signals();
-  bool clients_ready();
-  void send_frame(boost::asio::const_buffer buf);
-  
+  void send_frame();
+
+  std::unique_ptr<Effect> effect_;
   bool shutdown_;
   boost::asio::io_context main_io_;
   boost::asio::signal_set signals_;
@@ -46,20 +46,15 @@ private:
   boost::asio::ip::tcp::acceptor accept_sock_;
   boost::asio::ip::tcp::endpoint accept_ep_;
   std::vector<std::shared_ptr<IOThread>> workers_;
-  uint32_t client_count_;
-  int client_ready_count_;
+  std::unordered_map<Connection::key_t, Connection> clients_;
 };
 
 template <typename T>
 void LEDServer::run_effect(size_t seconds) {
-  T effect;
+  effect_.reset(new T());
   auto start = std::chrono::steady_clock::now();
   auto end = start + std::chrono::seconds(seconds);
-  effect.draw_frame();
   while (!is_shutdown() && std::chrono::steady_clock::now() < end) {
-    if (clients_ready()) {
-      send_frame(effect.buf());
-      effect.draw_frame();
-    }
-  }
+    effect_->draw_frame();
+  }  
 }

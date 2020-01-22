@@ -79,7 +79,7 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
 void LEDClient::on_got_ip() {
 	try {
 		ESP_LOGI(TAG, "Resetting client connection on IP change");
-		connection_.reset(new ClientConnection(ntohl(wifi_.ip()), ntohl(inet_addr(SERVER_ADDR)), wifi_.mac_address()));
+		connection_.reset(new ServerConnection(ntohl(wifi_.ip()), ntohl(inet_addr(SERVER_ADDR)), wifi_.mac_address()));
 
 	}
 	catch (std::exception& e) {
@@ -98,7 +98,7 @@ void LEDClient::connect_timer_start() {
 	
 void LEDClient::handle_connect_timer(void* arg) {
 	auto c = static_cast<LEDClient*>(arg);
-	c->connection_.reset(new ClientConnection(ntohl(c->wifi_.ip()), ntohl(inet_addr(SERVER_ADDR)), c->wifi_.mac_address()));
+	c->connection_.reset(new ServerConnection(ntohl(c->wifi_.ip()), ntohl(inet_addr(SERVER_ADDR)), c->wifi_.mac_address()));
 }
 
 void LEDClient::start_led_timer() {
@@ -126,13 +126,12 @@ void LEDClient::stop_led_timer() {
 }
 
 void IRAM_ATTR LEDClient::handle_led_timer_ISR(void* idx) {
-	s
+	
 }
 
-}
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
-ClientConnection::ClientConnection(uint32_t src, uint32_t dst, const std::vector<uint8_t>& mac) :
+ServerConnection::ServerConnection(uint32_t src, uint32_t dst, const std::vector<uint8_t>& mac) :
 	src_(src),
 	dst_(dst),
 	local_ep_(asio::ip::address_v4(src_), 0),
@@ -147,12 +146,12 @@ ClientConnection::ClientConnection(uint32_t src, uint32_t dst, const std::vector
 		});
 }
 
-ClientConnection::~ClientConnection() {
+ServerConnection::~ServerConnection() {
 	asio::post(ctx_, [this]() { sock_.close(); });
 	io_thread_.join();
 }
 
-void ClientConnection::connect() {
+void ServerConnection::connect() {
 	ESP_LOGI(TAG, "Connecting to %s", to_string(remote_ep_).c_str());
 	sock_.async_connect(remote_ep_,
 		[this](const std::error_code& ec) {
@@ -168,7 +167,7 @@ void ClientConnection::connect() {
 	);
 }
 
-void ClientConnection::send_header() {
+void ServerConnection::send_header() {
 	ESP_LOGI(TAG, "ID: %02x-%02x-%02x-%02x-%02x-%02x", id_[0], id_[1], id_[2], id_[3], id_[4], id_[5]);
 	asio::async_write(sock_, asio::buffer(id_),
 		[this](const std::error_code& ec, std::size_t length) {
@@ -182,7 +181,7 @@ void ClientConnection::send_header() {
 	read_frame();
 }
 
-void ClientConnection::read_frame() {
+void ServerConnection::read_frame() {
 	asio::async_read(sock_, asio::buffer((void *)bufs_[0], sizeof(bufs_[0])),
 		[this](const std::error_code& ec, std::size_t bytes) {
 			if (!ec && bytes) {
@@ -196,11 +195,11 @@ void ClientConnection::read_frame() {
 		});
 }
 
-void ClientConnection::send_ready() {
+void ServerConnection::send_ready() {
 	asio::async_write(sock_, asio::buffer(&READY, 1),
 		[this](const std::error_code& ec, std::size_t bytes) {
 			if (!ec) {
-				ESP_LOGI(TAG, "Sent READY", bytes);
+				ESP_LOGI(TAG, "Sent READY");
 			} else {
 				ESP_LOGE(TAG, "Write error %s: %s", to_string(remote_ep_).c_str(), ec.message().c_str());
 				post_conn_err();
@@ -209,7 +208,7 @@ void ClientConnection::send_ready() {
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void ClientConnection::post_conn_err() {
+void ServerConnection::post_conn_err() {
 	ERR_THROW(esp_event_post(LED_EVENT, LED_EVENT_CONN_ERR, NULL, 0, 0));
 }
 

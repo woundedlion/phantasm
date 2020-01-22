@@ -13,11 +13,11 @@ std::string to_string(const T& t) {
 	return ss.str();
 }
 
-class ClientConnection {
+class ServerConnection {
 public:
 
-	ClientConnection(uint32_t src, uint32_t dst, const std::vector<uint8_t>& id);
-	~ClientConnection();
+	ServerConnection(uint32_t src, uint32_t dst, const std::vector<uint8_t>& id);
+	~ServerConnection();
 	void connect();
 	void send_header();
 	void read_frame();
@@ -65,7 +65,7 @@ private:
 
 	State state_;
 	esp::WifiClient wifi_;
-	std::unique_ptr<ClientConnection> connection_;
+	std::unique_ptr<ServerConnection> connection_;
 	esp_timer_handle_t connect_timer_;
 
 	static void handle_event(void* arg, esp_event_base_t base, int32_t id, void* data);

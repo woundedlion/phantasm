@@ -46,7 +46,7 @@ private:
   boost::asio::ip::tcp::acceptor accept_sock_;
   boost::asio::ip::tcp::endpoint accept_ep_;
   std::vector<std::shared_ptr<IOThread>> workers_;
-  std::unordered_map<Connection::key_t, Connection> clients_;
+  std::unordered_map<Connection::key_t, std::unique_ptr<Connection>> clients_;
 };
 
 template <typename T>

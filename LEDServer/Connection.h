@@ -12,18 +12,19 @@ public:
   typedef uint8_t id_t[6];
   typedef unsigned long key_t;
     
-  Connection(Connection&& c);
   Connection(LEDServer& server,
 	     boost::asio::ip::tcp::socket& sock,
 	     std::shared_ptr<IOThread>);
   ~Connection();
-  bool operator==(const Connection& c) { return id_ == c.id_; }
-  Connection& operator=(Connection&& c);
+  Connection(Connection&& c) = delete;
+  Connection& operator=(Connection&& c) = delete;
+
+  void cancel();
   void set_ready(bool ready) { ready_ = ready; }
   bool ready() const { return ready_; }
   void send(const boost::asio::const_buffer& buf);
 
-  key_t key() const { return sock_.remote_endpoint().address().to_v4().to_ulong(); }
+  key_t key() const { return key_; }
   std::string id_str() const;
   boost::asio::io_context& ctx();
   
@@ -36,7 +37,9 @@ private:
   boost::asio::ip::tcp::socket sock_;
   std::shared_ptr<IOThread> io_;
   id_t id_;
+  key_t key_;
   std::chrono::steady_clock::time_point start_;
   bool ready_;
+  bool canceled_;
 };
   

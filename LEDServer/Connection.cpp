@@ -16,27 +16,23 @@ Connection::Connection(LEDServer& server,
   server_(server),
   sock_(std::move(sock)),
   io_(io),
-  ready_(true)
+  key_(sock_.remote_endpoint().address().to_v4().to_ulong()),
+  ready_(true),
+  canceled_(false)
 {
   read_header();
 }
 
-Connection::Connection(Connection&& c) :
-  server_(c.server_),
-  sock_(std::move(c.sock_)),
-  io_(std::move(c.io_))
-{}
-
 Connection::~Connection() {
-  sock_.shutdown(tcp::socket::shutdown_both);
-  sock_.close();
+  cancel();
 }
 
-Connection& Connection::operator=(Connection&& c) {
-  server_ = c.server_;
-  sock_ = std::move(c.sock_);
-  io_ = std::move(c.io_);
-  return *this;
+void Connection::cancel() {
+  if (!canceled_) {
+    canceled_ = true;
+    sock_.shutdown(tcp::socket::shutdown_both);
+    sock_.close();
+  }
 }
 
 void Connection::read_header() {
@@ -53,8 +49,7 @@ void Connection::read_header() {
 }
 
 void Connection::read_ready() {
-  unsigned char ready;
-  async_read(sock_, buffer(&ready, sizeof(ready)),
+  async_read(sock_, buffer(&ready_, sizeof(ready_)),
 	     [this](const std::error_code& ec, std::size_t bytes) {
 	       if (!ec && bytes) {
 		 LOG(debug) << "Received READY from client: " << id_str();

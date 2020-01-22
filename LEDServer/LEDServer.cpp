@@ -43,7 +43,9 @@ void LEDServer::start() {
 
 void LEDServer::stop() {
   LOG(info) << "Stopping server...";
-  clients_.clear();
+  for (auto&& [k, c] : clients_) {
+    c->cancel();
+  }
   for (auto&& w : workers_) {
     w->guard_.reset();
     w->thread_.join();
@@ -70,7 +72,7 @@ void LEDServer::post_client_ready(Connection& client) {
   post(main_io_, [this, &client](){
 		   client.set_ready(true);
 		   if (std::all_of(clients_.begin(), clients_.end(),
-				   [](auto&& c) { return c.second.ready(); })) {
+				   [](auto&& c) { return c.second->ready(); })) {
 		     send_frame();
 		   }
 		 });
@@ -93,10 +95,11 @@ void LEDServer::accept() {
 		      LOG(info) << "Connection accepted: "
 				<< client_sock.remote_endpoint() << " -> "
 				<< client_sock.local_endpoint();
-		      Connection c(*this, client_sock, io);
-		      auto r = clients_.insert_or_assign(c.key(), std::move(c));
+		      auto c = std::make_unique<Connection>(*this, client_sock, io);
+		      auto r = clients_.insert_or_assign(c->key(), std::move(c));
 		      if (!r.second) {
-			LOG(info) << "Replaced connection for client at :" << c.key();
+			LOG(info) << "Replaced connection for client at :"
+				  << c->key();
 		      }
 		      accept();
 		    } else {
@@ -129,9 +132,9 @@ void LEDServer::send_frame() {
   effect_->wait_frame_available();
   for (auto&& [k, c] : clients_) {
     LOG(debug) << "Sending frame " << effect_->frame_count()
-	       << " to client id " << c.id_str();
-    c.set_ready(false);
-    post(c.ctx(), [&]() { c.send(effect_->buf()); });
+	       << " to client id " << c->id_str();
+    c->set_ready(false);
+    post(c->ctx(), [&]() { c->send(effect_->buf()); });
   }
   effect_->advance_frame();
 }

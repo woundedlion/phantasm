@@ -24,15 +24,21 @@ Connection::Connection(LEDServer& server,
 }
 
 Connection::~Connection() {
-  cancel();
+  assert(canceled_);
+
 }
 
-void Connection::cancel() {
-  if (!canceled_) {
-    canceled_ = true;
-    sock_.shutdown(tcp::socket::shutdown_both);
-    sock_.close();
-  }
+void Connection::post_cancel() {
+  post(io_->ctx_, [this]() {
+	       if (!canceled_) {
+		 canceled_ = true;
+		 sock_.cancel();
+		 sock_.shutdown(tcp::socket::shutdown_both);
+		 sock_.close();
+		 LOG(info) << "Connection canceled: " << key();
+		 server_.get().post_connection_error(shared_from_this());
+	       }
+	     });
 }
 
 void Connection::read_header() {
@@ -41,9 +47,9 @@ void Connection::read_header() {
 	       if (!ec && bytes) {
 		 LOG(info) << "Header: ID = " << id_str();
 		 read_ready();
-	       } else {
+	       } else if (ec != std::errc::operation_canceled) {
 		 LOG(error) << "Read Error: " << ec.message();
-		 server_.get().post_connection_error(*this);
+		 server_.get().post_connection_error(shared_from_this());
 	       }
 	     });
 }
@@ -53,10 +59,10 @@ void Connection::read_ready() {
 	     [this](const std::error_code& ec, std::size_t bytes) {
 	       if (!ec && bytes) {
 		 LOG(debug) << "Received READY from client: " << id_str();
-		 server_.get().post_client_ready(*this);
-	       } else {
+		 server_.get().post_client_ready(shared_from_this());
+	       } else if (ec != std::errc::operation_canceled) {
 		 LOG(error) << "Read Error: " << ec.message();
-		 server_.get().post_connection_error(*this);		 
+		 server_.get().post_connection_error(shared_from_this());
 	       }
 	     });
 }
@@ -71,12 +77,11 @@ void Connection::send(const const_buffer& buf) {
 			    << std::chrono::duration_cast<
 			      std::chrono::milliseconds>(std::chrono::steady_clock::now()
 							 - start_).count() << "ms";
-		} else {
+		} else if (ec != std::errc::operation_canceled) {
 		  LOG(error) << "Write Error: " << ec.message();
-		  server_.get().post_connection_error(*this);
+		  server_.get().post_connection_error(shared_from_this());
 		}
-	      });
-  
+	      });  
 }
 
 std::string Connection::id_str() const {

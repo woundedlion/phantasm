@@ -4,7 +4,7 @@
 #include <vector>
 #include <thread>
 #include <chrono>
-#include <unordered_map>
+#include <unordered_set>
 #include <boost/asio.hpp>
 #include "Connection.h"
 #include "Effect.h"
@@ -24,8 +24,8 @@ public:
   ~LEDServer();
   void start();
   void stop();
-  void post_connection_error(Connection& client); 
-  void post_client_ready(Connection& client); 
+  void post_connection_error(std::shared_ptr<Connection> client); 
+  void post_client_ready(std::shared_ptr<Connection> client); 
   bool is_shutdown() { return shutdown_; }
   
   template <typename T>
@@ -35,6 +35,7 @@ private:
   
   std::shared_ptr<IOThread> io_schedule();
   void accept();
+  void kickoff_existing(const Connection::key_t& key);
   void subscribe_signals();
   void send_frame();
 
@@ -46,7 +47,7 @@ private:
   boost::asio::ip::tcp::acceptor accept_sock_;
   boost::asio::ip::tcp::endpoint accept_ep_;
   std::vector<std::shared_ptr<IOThread>> workers_;
-  std::unordered_map<Connection::key_t, std::unique_ptr<Connection>> clients_;
+  std::unordered_set<std::shared_ptr<Connection>> clients_;
 };
 
 template <typename T>

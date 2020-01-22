@@ -1,12 +1,13 @@
 #pragma once
 
 #include <chrono>
+#include <memory>
 #include <boost/asio.hpp>
 
 class LEDServer;
 class IOThread;
 
-class Connection {
+class Connection : public std::enable_shared_from_this<Connection> {
 public:
 
   typedef uint8_t id_t[6];
@@ -19,7 +20,7 @@ public:
   Connection(Connection&& c) = delete;
   Connection& operator=(Connection&& c) = delete;
 
-  void cancel();
+  void post_cancel();
   void set_ready(bool ready) { ready_ = ready; }
   bool ready() const { return ready_; }
   void send(const boost::asio::const_buffer& buf);

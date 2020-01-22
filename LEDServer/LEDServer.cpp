@@ -43,8 +43,8 @@ void LEDServer::start() {
 
 void LEDServer::stop() {
   LOG(info) << "Stopping server...";
-  for (auto&& [k, c] : clients_) {
-    c->cancel();
+  for (auto& c : clients_) {
+    c->post_cancel();
   }
   for (auto&& w : workers_) {
     w->guard_.reset();
@@ -57,22 +57,23 @@ void LEDServer::stop() {
   LOG(info) << "Server stopped";
 }
 
-void LEDServer::post_connection_error(Connection& client) {
+void LEDServer::post_connection_error(std::shared_ptr<Connection> client) {
   post(main_io_,
-       [this, &client](){
-	 if (clients_.erase(client.key())) {
-	   LOG(info) << "Client " << client.id_str() << " disconnected";
+       [this, client](){
+	 if (clients_.erase(client)) {
+	   LOG(info) << "Client " << client->id_str() << " at "
+		     << client->key() << " disconnected";
 	 } else {
-	   LOG(error) << "Connection not found: " << client.key();
+	   LOG(error) << "Connection not found: " << client->key();
 	 }
        });
 }
 
-void LEDServer::post_client_ready(Connection& client) {
-  post(main_io_, [this, &client](){
-		   client.set_ready(true);
+void LEDServer::post_client_ready(std::shared_ptr<Connection> client) {
+  post(main_io_, [this, client](){
+		   client->set_ready(true);
 		   if (std::all_of(clients_.begin(), clients_.end(),
-				   [](auto&& c) { return c.second->ready(); })) {
+				   [](auto& c) { return c->ready(); })) {
 		     send_frame();
 		   }
 		 });
@@ -95,12 +96,9 @@ void LEDServer::accept() {
 		      LOG(info) << "Connection accepted: "
 				<< client_sock.remote_endpoint() << " -> "
 				<< client_sock.local_endpoint();
-		      auto c = std::make_unique<Connection>(*this, client_sock, io);
-		      auto r = clients_.insert_or_assign(c->key(), std::move(c));
-		      if (!r.second) {
-			LOG(info) << "Replaced connection for client at :"
-				  << c->key();
-		      }
+		      auto c = std::make_shared<Connection>(*this, client_sock, io);
+		      kickoff_existing(c->key());
+		      clients_.emplace(std::move(c));
 		      accept();
 		    } else {
 		      if (ec != std::errc::operation_canceled) {
@@ -110,6 +108,15 @@ void LEDServer::accept() {
 		      }
 		    }
 		  });
+}
+
+void LEDServer::kickoff_existing(const Connection::key_t& key) {
+  std::for_each(clients_.begin(), clients_.end(),
+		[&](auto& c) {
+		  if (c->key() == key) {
+		    c->post_cancel();
+		  }
+		});
 }
 
 void LEDServer::subscribe_signals()
@@ -130,7 +137,7 @@ void LEDServer::subscribe_signals()
 
 void LEDServer::send_frame() {
   effect_->wait_frame_available();
-  for (auto&& [k, c] : clients_) {
+  for (auto& c : clients_) {
     LOG(debug) << "Sending frame " << effect_->frame_count()
 	       << " to client id " << c->id_str();
     c->set_ready(false);

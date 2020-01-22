@@ -118,6 +118,7 @@ void LEDServer::subscribe_signals()
 		       if (!ec) {
 			 LOG(info) << "Received signal " << signal_number;
 			 shutdown_ = true;
+			 if (effect_) effect_->cancel();
 		       } else {
 			 LOG(error) << "Signal listen error: " << ec.message();
 		       }
@@ -130,8 +131,9 @@ void LEDServer::send_frame() {
     LOG(debug) << "Sending frame " << effect_->frame_count()
 	       << " to client id " << c.id_str();
     c.set_ready(false);
-    //    post(c.ctx(), [&]() { c.send(effect_->buf()); });
+    post(c.ctx(), [&]() { c.send(effect_->buf()); });
   }
+  effect_->advance_frame();
 }
 
 int main(int argc, char *argv[]) {

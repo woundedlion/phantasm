@@ -73,7 +73,9 @@ void Connection::send(const const_buffer& buf) {
 		if (!ec) {
 		  LOG(info) << bytes << " bytes sent to client ID " << id_str()
 			    << " in " << std::dec
-			    << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_).count() << "ms";
+			    << std::chrono::duration_cast<
+			      std::chrono::milliseconds>(std::chrono::steady_clock::now()
+							 - start_).count() << "ms";
 		} else {
 		  LOG(error) << "Write Error: " << ec.message();
 		  server_.get().post_connection_error(*this);

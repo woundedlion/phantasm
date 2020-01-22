@@ -55,6 +55,10 @@ void LEDServer::run_effect(size_t seconds) {
   auto start = std::chrono::steady_clock::now();
   auto end = start + std::chrono::seconds(seconds);
   while (!is_shutdown() && std::chrono::steady_clock::now() < end) {
-    effect_->draw_frame();
+    try {
+      effect_->draw_frame();
+    } catch(const std::runtime_error& e) {
+      assert(is_shutdown());
+    }
   }  
 }

@@ -27,7 +27,7 @@ public:
 
 private:
 
-  DoubleBuffer<W, H>& buf_;
+  DoubleBuffer<RGB, W, H>& buf_;
 };
 
 class Effect {
@@ -36,7 +36,8 @@ public:
   Effect() : frame_count_(0){}
   virtual ~Effect() {};
   virtual void draw_frame() = 0;
-  boost::asio::const_buffer buf() { return bufs_.front(); }
+  boost::asio::const_buffer buf() { return boost::asio::buffer(bufs_.front(),
+							       bufs_.size()); }
   void advance_frame() {
     frame_count_++;
     bufs_.swap();

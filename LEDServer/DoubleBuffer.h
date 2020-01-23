@@ -19,7 +19,7 @@ public:
     }
 
     void stamp() {
-        std::copy(bufs_[front_], bufs_[front_] + sizeof(bufs_[front_]), bufs_[!front_]);
+      std::copy(bufs_[front_], bufs_[front_] + (W * H), bufs_[!front_]);
     }
 
     RGB* front() {

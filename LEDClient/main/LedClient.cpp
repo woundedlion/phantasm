@@ -2,6 +2,7 @@
 #include <thread>
 #include "LedClient.h"
 #include "esp_log.h"
+#include <esp_system.h>
 
 ESP_EVENT_DEFINE_BASE(LED_EVENT);
 
@@ -30,11 +31,14 @@ LEDClient::LEDClient() :
 LEDClient::~LEDClient() {
 	esp_timer_stop(connect_timer_);
 	ERR_LOG("esp_timer_delete", esp_timer_delete(connect_timer_));
+	stop_led_timer();
 }
 
 void LEDClient::start() {
 	wifi_.start();
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void LEDClient::handle_event(void* arg, esp_event_base_t base, int32_t id, void* data) {
 	auto handler = static_cast<LEDClient*>(arg);
@@ -57,6 +61,7 @@ void LEDClient::state_stopped(esp_event_base_t base, int32_t id, void* data) {
 		ESP_LOGI(TAG, "State transition: %s -> %s on %d", "STOPPED", "READY", id);
 		state_ = READY;
 		on_got_ip();
+		start_led_timer();
 		break;
 	default:
 		ESP_LOGW(TAG, "Unhandled event id: %d", id);
@@ -71,6 +76,10 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
 	case LED_EVENT_CONN_ERR:
 		on_conn_err();
 		break;
+	case LED_EVENT_NEED_FRAME:
+		ESP_LOGI(TAG, "NEED READY");
+		connection_->send_ready();
+		break;
 	default:
 		ESP_LOGW(TAG, "Unhandled event id: %d", id);
 	}
@@ -80,7 +89,6 @@ void LEDClient::on_got_ip() {
 	try {
 		ESP_LOGI(TAG, "Resetting client connection on IP change");
 		connection_.reset(new ServerConnection(ntohl(wifi_.ip()), ntohl(inet_addr(SERVER_ADDR)), wifi_.mac_address()));
-
 	}
 	catch (std::exception& e) {
 		ESP_LOGE(TAG, "%s", e.what());
@@ -112,13 +120,12 @@ void LEDClient::start_led_timer() {
 
 	timer_init(LED_TIMER_GROUP, LED_TIMER, &cfg);
 	timer_set_counter_value(LED_TIMER_GROUP, LED_TIMER, 0);
-	timer_set_alarm_value(LED_TIMER_GROUP, LED_TIMER, 1);
+	timer_set_alarm_value(LED_TIMER_GROUP, LED_TIMER, 4608);
 	timer_enable_intr(LED_TIMER_GROUP, LED_TIMER);
 	timer_isr_register(LED_TIMER_GROUP, LED_TIMER, 
 		LEDClient::handle_led_timer_ISR, (void*)LED_TIMER, ESP_INTR_FLAG_IRAM, NULL);
 
 	timer_start(LED_TIMER_GROUP, LED_TIMER);
-
 }
 
 void LEDClient::stop_led_timer() {
@@ -126,7 +133,9 @@ void LEDClient::stop_led_timer() {
 }
 
 void IRAM_ATTR LEDClient::handle_led_timer_ISR(void* idx) {
-	
+	auto r = esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, 0);
+	ets_printf("EEEEEEEEEEEEEEEEE: %d", r);
+	timer_group_clr_intr_status_in_isr(LED_TIMER_GROUP, LED_TIMER);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -182,9 +191,10 @@ void ServerConnection::send_header() {
 }
 
 void ServerConnection::read_frame() {
-	asio::async_read(sock_, asio::buffer((void *)bufs_[0], sizeof(bufs_[0])),
+	asio::async_read(sock_, asio::buffer((void *)bufs_.back(), bufs_.size()),
 		[this](const std::error_code& ec, std::size_t bytes) {
 			if (!ec && bytes) {
+				bufs_.inc_used();
 				ESP_LOGI(TAG, "Read complete: %d bytes", bytes);
 				read_frame();
 			}
@@ -195,11 +205,14 @@ void ServerConnection::read_frame() {
 		});
 }
 
+const unsigned char ServerConnection::READY_MAGIC = 0xab;
+
 void ServerConnection::send_ready() {
-	asio::async_write(sock_, asio::buffer(&READY, 1),
+	asio::async_write(sock_, asio::buffer(&ServerConnection::READY_MAGIC, 1),
 		[this](const std::error_code& ec, std::size_t bytes) {
 			if (!ec) {
 				ESP_LOGI(TAG, "Sent READY");
+				bufs_.swap();
 			} else {
 				ESP_LOGE(TAG, "Write error %s: %s", to_string(remote_ep_).c_str(), ec.message().c_str());
 				post_conn_err();

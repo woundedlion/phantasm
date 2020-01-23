@@ -4,7 +4,12 @@
 #include "driver/timer.h"
 #include "App.h"
 #include "WifiClient.h"
+#include "LEDServer/Types.h"
+#include "LEDServer/DoubleBuffer.h"
 
+
+static const int W = 288;
+static const int H = 144;
 
 template <typename T>
 std::string to_string(const T& t) {
@@ -27,7 +32,7 @@ private:
 
 	void post_conn_err();
 
-	static const unsigned char READY = 0xab;
+	static const unsigned char READY_MAGIC;
 	uint32_t src_;
 	uint32_t dst_;
 	asio::io_context ctx_;
@@ -35,14 +40,15 @@ private:
 	asio::ip::tcp::endpoint local_ep_;
 	asio::ip::tcp::endpoint remote_ep_;
 	asio::ip::tcp::socket sock_;
-	unsigned char bufs_[2][288 * 144 * 3];
 	std::vector<uint8_t> id_;
+	DoubleBuffer<RGB, W, H> bufs_;
 };
 
 ESP_EVENT_DECLARE_BASE(LED_EVENT);
 
 enum {
 	LED_EVENT_CONN_ERR = 10000,
+	LED_EVENT_NEED_FRAME = 10001
 };
 
 class LEDClient : public esp::App {

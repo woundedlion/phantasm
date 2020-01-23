@@ -60,6 +60,7 @@ void Connection::read_ready() {
 	       if (!ec && bytes) {
 		 LOG(debug) << "Received READY from client: " << id_str();
 		 server_.get().post_client_ready(shared_from_this());
+		 read_ready();
 	       } else if (ec != std::errc::operation_canceled) {
 		 LOG(error) << "Read Error: " << ec.message();
 		 server_.get().post_connection_error(shared_from_this());

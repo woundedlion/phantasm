@@ -77,8 +77,7 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
 		on_conn_err();
 		break;
 	case LED_EVENT_NEED_FRAME:
-		ESP_LOGI(TAG, "NEED READY");
-		connection_->send_ready();
+		connection_->advance_frame();
 		break;
 	default:
 		ESP_LOGW(TAG, "Unhandled event id: %d", id);
@@ -134,8 +133,9 @@ void LEDClient::stop_led_timer() {
 
 void IRAM_ATTR LEDClient::handle_led_timer_ISR(void* idx) {
 	auto r = esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, 0);
-	ets_printf("EEEEEEEEEEEEEEEEE: %d", r);
+	// TODO How to handle the above error
 	timer_group_clr_intr_status_in_isr(LED_TIMER_GROUP, LED_TIMER);
+	timer_group_enable_alarm_in_isr(LED_TIMER_GROUP, LED_TIMER);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -205,21 +205,32 @@ void ServerConnection::read_frame() {
 		});
 }
 
+void ServerConnection::advance_frame() {
+	bufs_.swap();
+	send_ready();
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+
 const unsigned char ServerConnection::READY_MAGIC = 0xab;
 
 void ServerConnection::send_ready() {
+	if (bufs_.full()) {
+		ESP_LOGW(TAG, "Frame delayed");
+		return;
+	}
 	asio::async_write(sock_, asio::buffer(&ServerConnection::READY_MAGIC, 1),
 		[this](const std::error_code& ec, std::size_t bytes) {
 			if (!ec) {
 				ESP_LOGI(TAG, "Sent READY");
 				bufs_.swap();
-			} else {
+			}
+			else {
 				ESP_LOGE(TAG, "Write error %s: %s", to_string(remote_ep_).c_str(), ec.message().c_str());
 				post_conn_err();
 			}
-		});	
+		});
 }
-/////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void ServerConnection::post_conn_err() {
 	ERR_THROW(esp_event_post(LED_EVENT, LED_EVENT_CONN_ERR, NULL, 0, 0));

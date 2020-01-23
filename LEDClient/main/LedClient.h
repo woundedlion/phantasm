@@ -26,10 +26,11 @@ public:
 	void connect();
 	void send_header();
 	void read_frame();
-	void send_ready();
+	void advance_frame();
 
 private:
 
+	void send_ready();
 	void post_conn_err();
 
 	static const unsigned char READY_MAGIC;

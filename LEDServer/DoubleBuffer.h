@@ -64,6 +64,14 @@ public:
         used_cv_.notify_all();
     }
 
+    bool empty() {
+        return used_ == 0;
+    }
+
+    bool full() {
+        return used_ == 2;
+    }
+
 private:
 
     int front_;

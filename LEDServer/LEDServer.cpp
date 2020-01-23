@@ -138,10 +138,11 @@ void LEDServer::subscribe_signals()
 void LEDServer::send_frame() {
   effect_->wait_frame_available();
   for (auto& c : clients_) {
-    LOG(debug) << "Sending frame " << effect_->frame_count()
-	       << " to client id " << c->id_str();
-    c->set_ready(false);
-    post(c->ctx(), [&]() { c->send(effect_->buf()); });
+    post(c->ctx(), [&]() {
+	LOG(debug) << "Sending frame " << effect_->frame_count()
+		   << " to client id " << c->id_str();
+	c->set_ready(false);
+	c->send(effect_->buf(0)); });
   }
   effect_->advance_frame();
 }

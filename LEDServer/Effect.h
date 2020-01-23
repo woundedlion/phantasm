@@ -5,6 +5,7 @@
 
 const int W = 288;
 const int H = 144;
+const int STRIP_H = 48;
 
 template<int W, int H>
 class Canvas {
@@ -36,12 +37,17 @@ public:
   Effect() : frame_count_(0){}
   virtual ~Effect() {};
   virtual void draw_frame() = 0;
-  boost::asio::const_buffer buf() { return boost::asio::buffer(bufs_.front(),
-							       bufs_.size()); }
+
+  boost::asio::const_buffer buf(int i) {
+    return boost::asio::buffer(bufs_.front() + i * STRIP_H,
+			       STRIP_H);
+  }
+  
   void advance_frame() {
     frame_count_++;
     bufs_.swap();
   }
+
   void wait_frame_available() { bufs_.wait_not_empty(); }
   uint64_t frame_count() { return frame_count_; }
   void cancel() { bufs_.cancel_waits(); }

@@ -29,16 +29,18 @@ Connection::~Connection() {
 }
 
 void Connection::post_cancel() {
-  post(io_->ctx_, [this]() {
-	       if (!canceled_) {
-		 canceled_ = true;
-		 sock_.cancel();
-		 sock_.shutdown(tcp::socket::shutdown_both);
-		 sock_.close();
-		 LOG(info) << "Connection canceled: " << key();
-		 server_.get().post_connection_error(shared_from_this());
-	       }
-	     });
+  post(io_->ctx_, [this]() { cancel(); });
+}
+
+void Connection::cancel() {
+  if (!canceled_) {
+    canceled_ = true;
+    sock_.cancel();
+    sock_.shutdown(tcp::socket::shutdown_both);
+    sock_.close();
+    LOG(info) << "Connection canceled: " << key();
+    server_.get().post_connection_error(shared_from_this());
+  }
 }
 
 void Connection::read_header() {
@@ -49,7 +51,7 @@ void Connection::read_header() {
 		 read_ready();
 	       } else if (ec != std::errc::operation_canceled) {
 		 LOG(error) << "Read Error: " << ec.message();
-		 server_.get().post_connection_error(shared_from_this());
+		 cancel();
 	       }
 	     });
 }
@@ -58,12 +60,16 @@ void Connection::read_ready() {
   async_read(sock_, buffer(&ready_, sizeof(ready_)),
 	     [this](const std::error_code& ec, std::size_t bytes) {
 	       if (!ec && bytes) {
+		 auto now = std::chrono::steady_clock::now();
 		 LOG(debug) << "Received READY from client: " << id_str();
+		 LOG(error) <<  "Last READY: " << std::chrono::duration_cast<
+		   std::chrono::milliseconds>(now - last_ready_).count() << "ms";
+		 last_ready_ = now;
 		 server_.get().post_client_ready(shared_from_this());
 		 read_ready();
 	       } else if (ec != std::errc::operation_canceled) {
 		 LOG(error) << "Read Error: " << ec.message();
-		 server_.get().post_connection_error(shared_from_this());
+		 cancel();
 	       }
 	     });
 }
@@ -80,7 +86,7 @@ void Connection::send(const const_buffer& buf) {
 							 - start_).count() << "ms";
 		} else if (ec != std::errc::operation_canceled) {
 		  LOG(error) << "Write Error: " << ec.message();
-		  server_.get().post_connection_error(shared_from_this());
+		  cancel();
 		}
 	      });  
 }

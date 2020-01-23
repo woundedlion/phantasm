@@ -31,6 +31,7 @@ public:
   
 private:
 
+  void cancel();
   void read_header();
   void read_ready();
 
@@ -40,6 +41,7 @@ private:
   id_t id_;
   key_t key_;
   std::chrono::steady_clock::time_point start_;
+  std::chrono::steady_clock::time_point last_ready_;
   bool ready_;
   bool canceled_;
 };

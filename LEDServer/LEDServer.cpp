@@ -61,7 +61,7 @@ void LEDServer::post_connection_error(std::shared_ptr<Connection> client) {
   post(main_io_,
        [this, client](){
 	 if (clients_.erase(client)) {
-	   LOG(info) << "Client " << client->id_str() << " at "
+	   LOG(warning) << "Client " << client->id_str() << " at "
 		     << client->key() << " disconnected";
 	 } else {
 	   LOG(error) << "Connection not found: " << client->key();

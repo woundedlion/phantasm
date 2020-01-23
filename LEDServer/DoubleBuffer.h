@@ -1,5 +1,9 @@
 #pragma once
 
+const int W = 288;
+const int H = 144;
+const int STRIP_H = 48;
+
 template <typename T, int W, int H>
 class DoubleBuffer {
 public:
@@ -62,14 +66,6 @@ public:
         std::unique_lock<std::mutex> _(used_lock_);
         canceled_ = true;
         used_cv_.notify_all();
-    }
-
-    bool empty() {
-        return used_ == 0;
-    }
-
-    bool full() {
-        return used_ == 2;
     }
 
 private:

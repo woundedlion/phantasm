@@ -7,10 +7,6 @@
 #include "LEDServer/Types.h"
 #include "LEDServer/DoubleBuffer.h"
 
-
-static const int W = 288;
-static const int H = 144;
-
 template <typename T>
 std::string to_string(const T& t) {
 	std::stringstream ss;
@@ -32,6 +28,7 @@ private:
 
 	void send_ready();
 	void post_conn_err();
+	void post_conn_active();
 
 	static const unsigned char READY_MAGIC;
 	uint32_t src_;
@@ -42,14 +39,16 @@ private:
 	asio::ip::tcp::endpoint remote_ep_;
 	asio::ip::tcp::socket sock_;
 	std::vector<uint8_t> id_;
-	DoubleBuffer<RGB, W, H> bufs_;
+	DoubleBuffer<RGB, W, STRIP_H> bufs_;
+	bool read_pending_;
 };
 
 ESP_EVENT_DECLARE_BASE(LED_EVENT);
 
 enum {
 	LED_EVENT_CONN_ERR = 10000,
-	LED_EVENT_NEED_FRAME = 10001
+	LED_EVENT_NEED_FRAME = 10001,
+	LED_EVENT_CONN_ACTIVE = 10002,
 };
 
 class LEDClient : public esp::App {

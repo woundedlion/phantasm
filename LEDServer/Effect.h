@@ -3,10 +3,6 @@
 #include "Types.h"
 #include "DoubleBuffer.h"
 
-const int W = 288;
-const int H = 144;
-const int STRIP_H = 48;
-
 template<int W, int H>
 class Canvas {
 public:

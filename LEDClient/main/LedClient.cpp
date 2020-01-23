@@ -65,7 +65,6 @@ void LEDClient::state_stopped(esp_event_base_t base, int32_t id, void* data) {
 		ESP_LOGI(TAG, "State transition: %s -> %s on %d", "STOPPED", "READY", id);
 		state_ = READY;
 		on_got_ip();
-		start_led_timer();
 		break;
 	default:
 		ESP_LOGW(TAG, "Unhandled event id: %d", id);
@@ -79,6 +78,10 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
 		break;
 	case LED_EVENT_CONN_ERR:
 		on_conn_err();
+		break;
+	case LED_EVENT_CONN_ACTIVE:
+		ESP_LOGI(TAG, "Connection active, starting LED timer");
+		start_led_timer();
 		break;
 	case LED_EVENT_NEED_FRAME:
 		if (connection_) {
@@ -153,7 +156,8 @@ ServerConnection::ServerConnection(uint32_t src, uint32_t dst, const std::vector
 	local_ep_(asio::ip::address_v4(src_), 0),
 	remote_ep_(asio::ip::address_v4(dst_), SERVER_PORT),
 	sock_(ctx_, local_ep_),
-	id_(mac)
+	id_(mac),
+	read_pending_(false)
 {
 	connect();
 	io_thread_ = std::thread([this]() { 
@@ -191,12 +195,13 @@ void ServerConnection::send_header() {
 		[this](const std::error_code& ec, std::size_t length) {
 			if (!ec) {
 				ESP_LOGI(TAG, "Sent HELLO: %s -> %s", to_string(local_ep_).c_str(), to_string(remote_ep_).c_str());
+				read_frame();
+				post_conn_active();
 			} else if (ec != std::errc::operation_canceled) {
 				ESP_LOGE(TAG, "Write error %s: %s", to_string(remote_ep_).c_str(), ec.message().c_str());
 				post_conn_err();
 			}
 		});
-	read_frame();
 }
 
 void ServerConnection::read_frame() {
@@ -205,6 +210,7 @@ void ServerConnection::read_frame() {
 			if (!ec && bytes) {
 				bufs_.inc_used();
 				ESP_LOGI(TAG, "Read complete: %d bytes", bytes);
+				read_pending_ = false;
 				read_frame();
 			}
 			else if (ec != std::errc::operation_canceled) {
@@ -215,8 +221,13 @@ void ServerConnection::read_frame() {
 }
 
 void ServerConnection::advance_frame() {
-	bufs_.swap();
-	send_ready();
+	if (!read_pending_) {
+		bufs_.swap();
+		send_ready();
+	}
+	else {
+		ESP_LOGW(TAG, "Frame delayed");
+	}
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -224,15 +235,11 @@ void ServerConnection::advance_frame() {
 const unsigned char ServerConnection::READY_MAGIC = 0xab;
 
 void ServerConnection::send_ready() {
-	if (bufs_.full()) {
-		ESP_LOGW(TAG, "Frame delayed");
-		return;
-	}
+	read_pending_ = true;
 	asio::async_write(sock_, asio::buffer(&ServerConnection::READY_MAGIC, 1),
 		[this](const std::error_code& ec, std::size_t bytes) {
 			if (!ec) {
 				ESP_LOGI(TAG, "Sent READY");
-				bufs_.swap();
 			}
 			else if (ec != std::errc::operation_canceled) {
 				ESP_LOGE(TAG, "Write error %s: %s", to_string(remote_ep_).c_str(), ec.message().c_str());
@@ -243,6 +250,10 @@ void ServerConnection::send_ready() {
 
 void ServerConnection::post_conn_err() {
 	ERR_THROW(esp_event_post(LED_EVENT, LED_EVENT_CONN_ERR, NULL, 0, 0));
+}
+
+void ServerConnection::post_conn_active() {
+	ERR_THROW(esp_event_post(LED_EVENT, LED_EVENT_CONN_ACTIVE, NULL, 0, 0));
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////

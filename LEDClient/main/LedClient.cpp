@@ -41,17 +41,21 @@ void LEDClient::start() {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void LEDClient::handle_event(void* arg, esp_event_base_t base, int32_t id, void* data) {
-	auto handler = static_cast<LEDClient*>(arg);
-	assert(base == IP_EVENT || base == LED_EVENT);
-	switch (handler->state_) {
-	case STOPPED:
-		handler->state_stopped(base, id, data);
-		break;
-	case READY:
-		handler->state_ready(base, id, data);
-		break;
-	default:
-		assert(false);
+	try {
+		auto handler = static_cast<LEDClient*>(arg);
+		assert(base == IP_EVENT || base == LED_EVENT);
+		switch (handler->state_) {
+		case STOPPED:
+			handler->state_stopped(base, id, data);
+			break;
+		case READY:
+			handler->state_ready(base, id, data);
+			break;
+		default:
+			assert(false);
+		}
+	} catch (const std::exception & e) {
+		ESP_LOGE(TAG, "Exception in LEDClient state machine: %s", e.what());
 	}
 }
 
@@ -77,7 +81,9 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
 		on_conn_err();
 		break;
 	case LED_EVENT_NEED_FRAME:
-		connection_->advance_frame();
+		if (connection_) {
+			connection_->advance_frame();
+		}
 		break;
 	default:
 		ESP_LOGW(TAG, "Unhandled event id: %d", id);
@@ -95,6 +101,7 @@ void LEDClient::on_got_ip() {
 }
 
 void LEDClient::on_conn_err() {
+	connection_.reset();
 	connect_timer_start();
 }
 
@@ -119,7 +126,7 @@ void LEDClient::start_led_timer() {
 
 	timer_init(LED_TIMER_GROUP, LED_TIMER, &cfg);
 	timer_set_counter_value(LED_TIMER_GROUP, LED_TIMER, 0);
-	timer_set_alarm_value(LED_TIMER_GROUP, LED_TIMER, 4608);
+	timer_set_alarm_value(LED_TIMER_GROUP, LED_TIMER, 288);
 	timer_enable_intr(LED_TIMER_GROUP, LED_TIMER);
 	timer_isr_register(LED_TIMER_GROUP, LED_TIMER, 
 		LEDClient::handle_led_timer_ISR, (void*)LED_TIMER, ESP_INTR_FLAG_IRAM, NULL);
@@ -132,7 +139,7 @@ void LEDClient::stop_led_timer() {
 }
 
 void IRAM_ATTR LEDClient::handle_led_timer_ISR(void* idx) {
-	auto r = esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, 0);
+	esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, 0);
 	// TODO How to handle the above error
 	timer_group_clr_intr_status_in_isr(LED_TIMER_GROUP, LED_TIMER);
 	timer_group_enable_alarm_in_isr(LED_TIMER_GROUP, LED_TIMER);
@@ -156,7 +163,10 @@ ServerConnection::ServerConnection(uint32_t src, uint32_t dst, const std::vector
 }
 
 ServerConnection::~ServerConnection() {
-	asio::post(ctx_, [this]() { sock_.close(); });
+	asio::post(ctx_, [this]() {
+			sock_.cancel();
+			sock_.close();
+		});
 	io_thread_.join();
 }
 
@@ -167,8 +177,7 @@ void ServerConnection::connect() {
 			if (!ec) {
 				ESP_LOGI(TAG, "Connection established: %s -> %s", to_string(local_ep_).c_str(), to_string(remote_ep_).c_str());
 				send_header();
-			}
-			else {
+			} else if (ec != std::errc::operation_canceled) {
 				ESP_LOGE(TAG, "Connection error to %s: %s", to_string(remote_ep_).c_str(), ec.message().c_str());
 				post_conn_err();
 			}
@@ -182,7 +191,7 @@ void ServerConnection::send_header() {
 		[this](const std::error_code& ec, std::size_t length) {
 			if (!ec) {
 				ESP_LOGI(TAG, "Sent HELLO: %s -> %s", to_string(local_ep_).c_str(), to_string(remote_ep_).c_str());
-			} else {
+			} else if (ec != std::errc::operation_canceled) {
 				ESP_LOGE(TAG, "Write error %s: %s", to_string(remote_ep_).c_str(), ec.message().c_str());
 				post_conn_err();
 			}
@@ -198,7 +207,7 @@ void ServerConnection::read_frame() {
 				ESP_LOGI(TAG, "Read complete: %d bytes", bytes);
 				read_frame();
 			}
-			else {
+			else if (ec != std::errc::operation_canceled) {
 				ESP_LOGE(TAG, "Read error: %s", ec.message().c_str());
 				post_conn_err();
 			}
@@ -225,7 +234,7 @@ void ServerConnection::send_ready() {
 				ESP_LOGI(TAG, "Sent READY");
 				bufs_.swap();
 			}
-			else {
+			else if (ec != std::errc::operation_canceled) {
 				ESP_LOGE(TAG, "Write error %s: %s", to_string(remote_ep_).c_str(), ec.message().c_str());
 				post_conn_err();
 			}

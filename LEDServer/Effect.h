@@ -36,7 +36,7 @@ public:
 
   boost::asio::const_buffer buf(int i) {
     return boost::asio::buffer(bufs_.front() + i * STRIP_H,
-			       STRIP_H);
+			       W * STRIP_H * sizeof(RGB));
   }
   
   void advance_frame() {

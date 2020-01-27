@@ -38,6 +38,12 @@ void LEDClient::start() {
 	wifi_.start();
 }
 
+void LEDClient::send_pixels() {
+	assert(connection_);
+	APA102Frame<STRIP_H> frame(connection_->get_frame());
+	spi_ << frame;
+}
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void LEDClient::handle_event(void* arg, esp_event_base_t base, int32_t id, void* data) {
@@ -85,6 +91,7 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
 		break;
 	case LED_EVENT_NEED_FRAME:
 		if (connection_) {
+			send_pixels();
 			connection_->advance_frame();
 		}
 		break;
@@ -132,7 +139,8 @@ void LEDClient::start_led_timer() {
 	timer_set_alarm_value(LED_TIMER_GROUP, LED_TIMER, 288);
 	timer_enable_intr(LED_TIMER_GROUP, LED_TIMER);
 	timer_isr_register(LED_TIMER_GROUP, LED_TIMER, 
-		LEDClient::handle_led_timer_ISR, (void*)LED_TIMER, ESP_INTR_FLAG_IRAM, NULL);
+		LEDClient::handle_led_timer_ISR, reinterpret_cast<void *>(this), 
+		ESP_INTR_FLAG_IRAM, NULL);
 
 	timer_start(LED_TIMER_GROUP, LED_TIMER);
 }
@@ -141,11 +149,12 @@ void LEDClient::stop_led_timer() {
 	timer_deinit(LED_TIMER_GROUP, LED_TIMER);
 }
 
-void IRAM_ATTR LEDClient::handle_led_timer_ISR(void* idx) {
-	esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, 0);
-	// TODO How to handle the above error
+void IRAM_ATTR LEDClient::handle_led_timer_ISR(void* arg) {
+	ERR_THROW(timer_spinlock_take(LED_TIMER_GROUP));
+	ERR_THROW(esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, 0));
 	timer_group_clr_intr_status_in_isr(LED_TIMER_GROUP, LED_TIMER);
 	timer_group_enable_alarm_in_isr(LED_TIMER_GROUP, LED_TIMER);
+	ERR_THROW(timer_spinlock_give(LED_TIMER_GROUP));
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -228,6 +237,10 @@ void ServerConnection::advance_frame() {
 	else {
 		ESP_LOGW(TAG, "Frame delayed");
 	}
+}
+
+RGB* ServerConnection::get_frame() {
+	return bufs_.front();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////

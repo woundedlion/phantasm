@@ -4,6 +4,7 @@
 #include "driver/timer.h"
 #include "App.h"
 #include "WifiClient.h"
+#include "SPI.h"
 #include "LEDServer/Types.h"
 #include "LEDServer/DoubleBuffer.h"
 
@@ -23,6 +24,7 @@ public:
 	void send_header();
 	void read_frame();
 	void advance_frame();
+	RGB* get_frame();
 
 private:
 
@@ -57,6 +59,7 @@ public:
 	LEDClient();
 	~LEDClient();
 	void start();
+	void send_pixels();
 
 private:
 
@@ -73,6 +76,7 @@ private:
 	esp::WifiClient wifi_;
 	std::unique_ptr<ServerConnection> connection_;
 	esp_timer_handle_t connect_timer_;
+	SPI spi_;
 
 	static void handle_event(void* arg, esp_event_base_t base, int32_t id, void* data);
 	void state_stopped(esp_event_base_t base, int32_t id, void* data);

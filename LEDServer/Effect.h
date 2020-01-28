@@ -59,7 +59,11 @@ public:
   Test() {}
   void draw_frame() {
     Canvas<W, H> c(this->bufs_);
-    c[0][0] = RGB(255, 0, 0);
+    for (int x = 0; x < W; ++x) {
+      for (int y = 0; y < H; ++y) {
+	c[x][y] = RGB(0x55, 0x55, 0x55);
+      }
+    }
   }
 };
 

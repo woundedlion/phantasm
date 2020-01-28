@@ -79,9 +79,10 @@ private:
 	esp::WifiClient wifi_;
 	std::unique_ptr<ServerConnection> connection_;
 	esp_timer_handle_t connect_timer_;
-	SPI spi_;
-	esp_event_loop_handle_t led_loop_;
+	std::unique_ptr<SPI> spi_;
 	uint32_t x_;
+	TaskHandle_t led_task_;
+	static void run_leds(void * arg);
 
 	static void handle_event(void* arg, esp_event_base_t base, int32_t id, void* data);
 	static void handle_led_event(void* arg, esp_event_base_t base, int32_t id, void* data);

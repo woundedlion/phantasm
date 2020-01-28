@@ -24,7 +24,7 @@ SPI& SPI::operator<<(const T& t) {
 	spi_transaction_t txn = {};
 	txn.tx_buffer = t.data();
 	txn.length = t.size() * 8;
-	ERR_THROW(spi_device_polling_transmit(device_, &txn));
+	ERR_THROW(spi_device_transmit(device_, &txn));
 	return *this;
 }
 

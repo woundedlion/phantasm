@@ -2,7 +2,7 @@
 #include <thread>
 #include "LedClient.h"
 #include "esp_log.h"
-#include <esp_system.h>
+#include "esp_system.h"
 
 ESP_EVENT_DEFINE_BASE(LED_EVENT);
 
@@ -16,7 +16,8 @@ namespace {
 }
 
 LEDClient::LEDClient() :
-	state_(STOPPED) 
+	state_(STOPPED),
+	x_(0)
 {
 	esp_timer_create_args_t args;
 	args.callback = &LEDClient::handle_connect_timer;
@@ -24,14 +25,32 @@ LEDClient::LEDClient() :
 	args.dispatch_method = ESP_TIMER_TASK;
 	args.name = "connect_timer";
 	ERR_THROW(esp_timer_create(&args, &connect_timer_));
+
 	ERR_THROW(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, LEDClient::handle_event, this));
 	ERR_THROW(esp_event_handler_register(LED_EVENT, ESP_EVENT_ANY_ID, LEDClient::handle_event, this));
+
+	esp_event_loop_args_t led_loop_cfg = {};
+	led_loop_cfg.queue_size = 1;
+	led_loop_cfg.task_name = "LED";
+	led_loop_cfg.task_priority = 1;
+	led_loop_cfg.task_stack_size = 2048;
+	led_loop_cfg.task_core_id = 1;
+	ERR_THROW(esp_event_loop_create(&led_loop_cfg, &led_loop_));
+	ERR_THROW(esp_event_handler_register_with(
+		led_loop_, LED_EVENT, LED_EVENT_START_TIMER, LEDClient::handle_led_event, this));
+	ERR_THROW(esp_event_handler_register_with(
+		led_loop_, LED_EVENT, LED_EVENT_STOP_TIMER, LEDClient::handle_led_event, this));
 }
 
 LEDClient::~LEDClient() {
-	esp_timer_stop(connect_timer_);
+	ERR_LOG("esp_event_handler_unregister", esp_event_handler_unregister_with(
+		led_loop_, LED_EVENT, LED_EVENT_START_TIMER, LEDClient::handle_led_event));
+	ERR_LOG("esp_event_handler_unregister", esp_event_handler_unregister_with(
+		led_loop_, LED_EVENT, LED_EVENT_STOP_TIMER, LEDClient::handle_led_event));
+	ERR_LOG("esp_event_loop_delete", esp_event_loop_delete(led_loop_));
+	ERR_LOG("esp_timer_stop", esp_timer_stop(connect_timer_));
 	ERR_LOG("esp_timer_delete", esp_timer_delete(connect_timer_));
-	stop_led_timer();
+	// TODO: Stop LED timer on core 1
 }
 
 void LEDClient::start() {
@@ -39,12 +58,29 @@ void LEDClient::start() {
 }
 
 void LEDClient::send_pixels() {
-	assert(connection_);
-	APA102Frame<STRIP_H> frame(connection_->get_frame());
-	spi_ << frame;
+	if (connection_) {
+		spi_ << APA102Frame<STRIP_H>(connection_->get_frame());
+	}
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void LEDClient::handle_led_event(void* arg, esp_event_base_t base, int32_t id, void* data) {
+	auto handler = static_cast<LEDClient*>(arg);
+	assert(base == LED_EVENT);
+	switch (id) {
+	case LED_EVENT_START_TIMER:
+		handler->start_led_timer();
+		break;
+	case LED_EVENT_STOP_TIMER:
+		handler->stop_led_timer();
+		break;
+	case LED_EVENT_SHOW:
+		handler->send_pixels();
+		break;
+	default:
+		assert(false);
+	}
+}
 
 void LEDClient::handle_event(void* arg, esp_event_base_t base, int32_t id, void* data) {
 	try {
@@ -87,11 +123,10 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
 		break;
 	case LED_EVENT_CONN_ACTIVE:
 		ESP_LOGI(TAG, "Connection active, starting LED timer");
-		start_led_timer();
+		ERR_THROW(esp_event_post_to(led_loop_, LED_EVENT, LED_EVENT_START_TIMER, NULL, 0, portMAX_DELAY));
 		break;
 	case LED_EVENT_NEED_FRAME:
 		if (connection_) {
-			send_pixels();
 			connection_->advance_frame();
 		}
 		break;
@@ -134,27 +169,33 @@ void LEDClient::start_led_timer() {
 	cfg.auto_reload = TIMER_AUTORELOAD_EN;
 	cfg.divider = LED_TIMER_DIVIDER;
 
-	timer_init(LED_TIMER_GROUP, LED_TIMER, &cfg);
-	timer_set_counter_value(LED_TIMER_GROUP, LED_TIMER, 0);
-	timer_set_alarm_value(LED_TIMER_GROUP, LED_TIMER, 288);
-	timer_enable_intr(LED_TIMER_GROUP, LED_TIMER);
-	timer_isr_register(LED_TIMER_GROUP, LED_TIMER, 
-		LEDClient::handle_led_timer_ISR, reinterpret_cast<void *>(this), 
-		ESP_INTR_FLAG_IRAM, NULL);
-
-	timer_start(LED_TIMER_GROUP, LED_TIMER);
+	ERR_THROW(timer_init(LED_TIMER_GROUP, LED_TIMER, &cfg));
+	ERR_THROW(timer_set_counter_value(LED_TIMER_GROUP, LED_TIMER, 0));
+	ERR_THROW(timer_set_alarm_value(LED_TIMER_GROUP, LED_TIMER, 1));
+	ERR_THROW(timer_enable_intr(LED_TIMER_GROUP, LED_TIMER));
+	ERR_THROW(timer_isr_register(LED_TIMER_GROUP, LED_TIMER, 
+		LEDClient::handle_led_timer_ISR, this, ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL3, NULL));
+	ERR_THROW(timer_start(LED_TIMER_GROUP, LED_TIMER));
+	ESP_LOGI(TAG, "LED Timer started on core %d", xPortGetCoreID());
 }
 
 void LEDClient::stop_led_timer() {
+
 	timer_deinit(LED_TIMER_GROUP, LED_TIMER);
 }
 
 void IRAM_ATTR LEDClient::handle_led_timer_ISR(void* arg) {
-	ERR_THROW(timer_spinlock_take(LED_TIMER_GROUP));
-	ERR_THROW(esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, 0));
+	timer_spinlock_take(LED_TIMER_GROUP);
 	timer_group_clr_intr_status_in_isr(LED_TIMER_GROUP, LED_TIMER);
 	timer_group_enable_alarm_in_isr(LED_TIMER_GROUP, LED_TIMER);
-	ERR_THROW(timer_spinlock_give(LED_TIMER_GROUP));
+	auto c = reinterpret_cast<LEDClient *>(arg);
+	c->send_pixels();
+	//esp_event_post_to(c->led_loop_, LED_EVENT, LED_EVENT_SHOW, NULL, 0, portMAX_DELAY);
+	if (++c->x_ == W) {
+		c->x_ = 0;
+		esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, portMAX_DELAY);
+	}
+	timer_spinlock_give(LED_TIMER_GROUP);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////

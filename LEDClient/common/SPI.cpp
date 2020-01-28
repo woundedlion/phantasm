@@ -4,6 +4,7 @@
 SPI::SPI() {
 	spi_bus_config_t bus_cfg = {};
 	bus_cfg.miso_io_num = -1;
+	bus_cfg.mosi_io_num = 23;
 	bus_cfg.sclk_io_num = 18;
 	bus_cfg.quadwp_io_num = -1;
 	bus_cfg.quadhd_io_num = -1;
@@ -19,7 +20,7 @@ SPI::SPI() {
 	dev_cfg.duty_cycle_pos = 128;
 	dev_cfg.cs_ena_pretrans = 0;
 	dev_cfg.cs_ena_posttrans = 0;
-	dev_cfg.clock_speed_hz = 20 * 1000000;
+	dev_cfg.clock_speed_hz = 24 * 1000000;
 	dev_cfg.input_delay_ns = 0;
 	dev_cfg.spics_io_num = -1;
 	dev_cfg.flags = 0;

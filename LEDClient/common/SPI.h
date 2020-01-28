@@ -23,9 +23,8 @@ template <typename T>
 SPI& SPI::operator<<(const T& t) {
 	spi_transaction_t txn = {};
 	txn.tx_buffer = t.data();
-	txn.length = t.size();
+	txn.length = t.size() * 8;
 	ERR_THROW(spi_device_polling_transmit(device_, &txn));
-	ESP_LOGI("SPI", "Sent SPI frame");
 	return *this;
 }
 

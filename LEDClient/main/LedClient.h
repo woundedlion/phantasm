@@ -51,6 +51,9 @@ enum {
 	LED_EVENT_CONN_ERR = 10000,
 	LED_EVENT_NEED_FRAME = 10001,
 	LED_EVENT_CONN_ACTIVE = 10002,
+	LED_EVENT_START_TIMER = 10003,
+	LED_EVENT_STOP_TIMER = 10004,
+	LED_EVENT_SHOW = 10005,
 };
 
 class LEDClient : public esp::App {
@@ -68,7 +71,7 @@ private:
 		READY,
 	};
 
-	static const timer_group_t LED_TIMER_GROUP = TIMER_GROUP_0;
+	static const timer_group_t LED_TIMER_GROUP = TIMER_GROUP_1;
 	static const timer_idx_t LED_TIMER = TIMER_0;
 	static const uint16_t LED_TIMER_DIVIDER = 17361;
 
@@ -77,8 +80,11 @@ private:
 	std::unique_ptr<ServerConnection> connection_;
 	esp_timer_handle_t connect_timer_;
 	SPI spi_;
+	esp_event_loop_handle_t led_loop_;
+	uint32_t x_;
 
 	static void handle_event(void* arg, esp_event_base_t base, int32_t id, void* data);
+	static void handle_led_event(void* arg, esp_event_base_t base, int32_t id, void* data);
 	void state_stopped(esp_event_base_t base, int32_t id, void* data);
 	void state_ready(esp_event_base_t base, int32_t id, void* data);
 

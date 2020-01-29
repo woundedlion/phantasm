@@ -32,6 +32,7 @@ LEDClient::LEDClient() :
 	ERR_THROW(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, LEDClient::handle_event, this));
 	ERR_THROW(esp_event_handler_register(LED_EVENT, ESP_EVENT_ANY_ID, LEDClient::handle_event, this));
 
+	xTaskCreatePinnedToCore(LEDClient::run_leds, "LED_LOOP", 2048, this, 0, &led_task_, 1);
 }
 
 LEDClient::~LEDClient() {
@@ -86,6 +87,9 @@ void LEDClient::state_stopped(esp_event_base_t base, int32_t id, void* data) {
 		state_ = READY;
 		on_got_ip();
 		break;
+	case LED_EVENT_NEED_FRAME:
+		// No connection yet, skip frame request
+		break;
 	default:
 		ESP_LOGW(TAG, "Unhandled event id: %d", id);
 	}
@@ -100,8 +104,7 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
 		on_conn_err();
 		break;
 	case LED_EVENT_CONN_ACTIVE:
-		ESP_LOGI(TAG, "Connection active, starting LED timer");
-		xTaskCreatePinnedToCore(LEDClient::run_leds, "LED_LOOP", 2048, this, 0, &led_task_, 1);
+		ESP_LOGI(TAG, "Connection active");
 		break;
 	case LED_EVENT_NEED_FRAME:
 		if (connection_) {

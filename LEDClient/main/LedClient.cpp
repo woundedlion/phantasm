@@ -45,7 +45,7 @@ void LEDClient::start() {
 
 void IRAM_ATTR LEDClient::send_pixels() {
 	if (connection_) {
-		*spi_ << frame_.load(connection_->get_frame());
+		*spi_ << frame_;
 	}
 }
 
@@ -53,15 +53,10 @@ void IRAM_ATTR LEDClient::send_pixels() {
 void IRAM_ATTR LEDClient::run_leds(void* arg) {
 	auto c = reinterpret_cast<LEDClient*>(arg);
 	c->spi_.reset(new SPI());
-	SquareWaveGenerator<W * 16, PIN_CLOCK_GEN> column_clock;
+	SquareWaveGenerator<W * 16, PIN_CLOCK_GEN> clock;
 	c->start_gpio();
 	while (true) {
 		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-		c->send_pixels();
-		if (++c->x_ == W) {
-			c->x_ = 0;
-			esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, portMAX_DELAY);
-		}
 	}
 }
 
@@ -106,7 +101,7 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
 		break;
 	case LED_EVENT_CONN_ACTIVE:
 		ESP_LOGI(TAG, "Connection active, starting LED timer");
-		xTaskCreatePinnedToCore(LEDClient::run_leds, "LED_LOOP", 2048, this, 25, &led_task_, 1);
+		xTaskCreatePinnedToCore(LEDClient::run_leds, "LED_LOOP", 2048, this, 0, &led_task_, 1);
 		break;
 	case LED_EVENT_NEED_FRAME:
 		if (connection_) {
@@ -156,7 +151,8 @@ void LEDClient::start_gpio() {
 	cfg.pull_down_en = GPIO_PULLDOWN_ENABLE;
 	cfg.intr_type = GPIO_INTR_POSEDGE;
 	ERR_THROW(gpio_config(&cfg));
-	ERR_THROW(gpio_install_isr_service(ESP_INTR_FLAG_IRAM));
+
+	ERR_THROW(gpio_install_isr_service(ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL3));
 	ERR_THROW(gpio_isr_handler_add(PIN_CLOCK_READ, LEDClient::handle_clock_pulse_ISR, this));
 }
 
@@ -167,11 +163,18 @@ void LEDClient::stop_gpio() {
 
 void IRAM_ATTR LEDClient::handle_clock_pulse_ISR(void* arg) {
 	auto c = reinterpret_cast<LEDClient*>(arg);
+	c->send_pixels();
+	if (++c->x_ == W) {
+		c->x_ = 0;
+		esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, portMAX_DELAY);
+	}
+   /*
 	BaseType_t higher_prio_task_woken = 0;
 	vTaskNotifyGiveFromISR(c->led_task_, &higher_prio_task_woken);
 	if (higher_prio_task_woken == pdTRUE) {
 		portYIELD_FROM_ISR();
 	}
+	*/
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -249,6 +252,7 @@ void ServerConnection::read_frame() {
 void ServerConnection::advance_frame() {
 	if (!read_pending_) {
 		bufs_.swap();
+		frame_.load(get_frame());
 		send_ready();
 	}
 	else {

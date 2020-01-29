@@ -80,6 +80,7 @@ private:
 	std::unique_ptr<SPI> spi_;
 	volatile uint32_t x_;
 	TaskHandle_t led_task_;
+
 	static void run_leds(void * arg);
 
 	static void handle_event(void* arg, esp_event_base_t base, int32_t id, void* data);

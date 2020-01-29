@@ -20,7 +20,7 @@ private:
 };
 
 template <typename T>
-SPI& SPI::operator<<(const T& t) {
+SPI& IRAM_ATTR SPI::operator<<(const T& t) {
 	spi_transaction_t txn = {};
 	txn.tx_buffer = t.data();
 	txn.length = t.size() * 8;
@@ -51,7 +51,7 @@ public:
 		std::fill(w, frame_ + size(), 1);
 	}
 
-	void load(RGB* data) {
+	APA102Frame& load(RGB* data) {
 		auto w = frame_ + 4;
 		for (auto p = data; p < data + S; ++p) {
 			*w++ = 0xff; // 0xe0 + 5 bits brightness 
@@ -59,6 +59,7 @@ public:
 			*w++ = p->g_;
 			*w++ = p->r_;
 		}
+		return *this;
 	}
 
 	constexpr size_t size() const { return sizeof(frame_); }

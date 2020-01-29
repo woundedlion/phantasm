@@ -3,6 +3,7 @@
 #include "LedClient.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "LEDC.h"
 
 ESP_EVENT_DEFINE_BASE(LED_EVENT);
 
@@ -13,6 +14,8 @@ namespace {
 	const char* SERVER_ADDR = "192.168.0.200";
 	const int SERVER_PORT = 5050;
 	LEDClient app;
+	DoubleBuffer<RGB, W, STRIP_H> bufs_;
+	APA102Frame<STRIP_H> frame_;
 }
 
 LEDClient::LEDClient() :
@@ -28,29 +31,30 @@ LEDClient::LEDClient() :
 
 	ERR_THROW(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, LEDClient::handle_event, this));
 	ERR_THROW(esp_event_handler_register(LED_EVENT, ESP_EVENT_ANY_ID, LEDClient::handle_event, this));
+
 }
 
 LEDClient::~LEDClient() {
-	ERR_LOG("esp_timer_stop", esp_timer_stop(connect_timer_));
-	ERR_LOG("esp_timer_delete", esp_timer_delete(connect_timer_));
-	// TODO: Stop LED timer on core 1
+	stop_connect_timer();
+	// TODO: Clean up LED timer task
 }
 
 void LEDClient::start() {
 	wifi_.start();
 }
 
-void LEDClient::send_pixels() {
+void IRAM_ATTR LEDClient::send_pixels() {
 	if (connection_) {
-		*spi_ << APA102Frame<STRIP_H>(connection_->get_frame());
+		*spi_ << frame_.load(connection_->get_frame());
 	}
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void LEDClient::run_leds(void* arg) {
+void IRAM_ATTR LEDClient::run_leds(void* arg) {
 	auto c = reinterpret_cast<LEDClient*>(arg);
 	c->spi_.reset(new SPI());
-	c->start_led_timer();
+	SquareWaveGenerator<W * 16, PIN_CLOCK_GEN> column_clock;
+	c->start_gpio();
 	while (true) {
 		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 		c->send_pixels();
@@ -102,7 +106,7 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
 		break;
 	case LED_EVENT_CONN_ACTIVE:
 		ESP_LOGI(TAG, "Connection active, starting LED timer");
-		xTaskCreatePinnedToCore(LEDClient::run_leds, "LED_LOOP", 2048, this, 32, &led_task_, 1);
+		xTaskCreatePinnedToCore(LEDClient::run_leds, "LED_LOOP", 2048, this, 25, &led_task_, 1);
 		break;
 	case LED_EVENT_NEED_FRAME:
 		if (connection_) {
@@ -126,51 +130,45 @@ void LEDClient::on_got_ip() {
 
 void LEDClient::on_conn_err() {
 	connection_.reset();
-	connect_timer_start();
+	start_connect_timer();
 }
 
-void LEDClient::connect_timer_start() {
+void LEDClient::start_connect_timer() {
 	ESP_LOGI(TAG, "Reconnecting in 5 seconds...");
 	ERR_THROW(esp_timer_start_once(connect_timer_, 5000000));
 }
-	
+
+void LEDClient::stop_connect_timer() {
+	ERR_LOG("esp_timer_stop", esp_timer_stop(connect_timer_));
+	ERR_LOG("esp_timer_delete", esp_timer_delete(connect_timer_));
+}
+
 void LEDClient::handle_connect_timer(void* arg) {
 	auto c = static_cast<LEDClient*>(arg);
 	c->connection_.reset(new ServerConnection(ntohl(c->wifi_.ip()), ntohl(inet_addr(SERVER_ADDR)), c->wifi_.mac_address()));
 }
 
-void LEDClient::start_led_timer() {
-	timer_config_t cfg;
-	cfg.alarm_en = TIMER_ALARM_EN;
-	cfg.counter_en = TIMER_PAUSE;
-	cfg.intr_type = TIMER_INTR_LEVEL;
-	cfg.counter_dir = TIMER_COUNT_UP;
-	cfg.auto_reload = TIMER_AUTORELOAD_EN;
-	cfg.divider = LED_TIMER_DIVIDER;
-
-	ESP_LOGI(TAG, "LED Timer starting on core %d", xPortGetCoreID());
-	ERR_THROW(timer_init(LED_TIMER_GROUP, LED_TIMER, &cfg));
-	ERR_THROW(timer_set_counter_value(LED_TIMER_GROUP, LED_TIMER, 0));
-	ERR_THROW(timer_set_alarm_value(LED_TIMER_GROUP, LED_TIMER, 1));
-	ERR_THROW(timer_enable_intr(LED_TIMER_GROUP, LED_TIMER));
-	ERR_THROW(timer_isr_register(LED_TIMER_GROUP, LED_TIMER, 
-		LEDClient::handle_led_timer_ISR, this, ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL3, NULL));
-	ERR_THROW(timer_start(LED_TIMER_GROUP, LED_TIMER));
+void LEDClient::start_gpio() {
+	gpio_config_t cfg = {};
+	cfg.pin_bit_mask = 1ULL << PIN_CLOCK_READ;
+	cfg.mode = GPIO_MODE_INPUT;
+	cfg.pull_up_en = GPIO_PULLUP_DISABLE;
+	cfg.pull_down_en = GPIO_PULLDOWN_ENABLE;
+	cfg.intr_type = GPIO_INTR_POSEDGE;
+	ERR_THROW(gpio_config(&cfg));
+	ERR_THROW(gpio_install_isr_service(ESP_INTR_FLAG_IRAM));
+	ERR_THROW(gpio_isr_handler_add(PIN_CLOCK_READ, LEDClient::handle_clock_pulse_ISR, this));
 }
 
-void LEDClient::stop_led_timer() {
-
-	timer_deinit(LED_TIMER_GROUP, LED_TIMER);
+void LEDClient::stop_gpio() {
+	gpio_uninstall_isr_service();
+	ERR_LOG("gpio_isr_handler_remove", gpio_isr_handler_remove(PIN_CLOCK_READ));
 }
 
-void IRAM_ATTR LEDClient::handle_led_timer_ISR(void* arg) {
-	timer_spinlock_take(LED_TIMER_GROUP);
-	timer_group_clr_intr_status_in_isr(LED_TIMER_GROUP, LED_TIMER);
-	timer_group_enable_alarm_in_isr(LED_TIMER_GROUP, LED_TIMER);
-	auto c = reinterpret_cast<LEDClient *>(arg);
+void IRAM_ATTR LEDClient::handle_clock_pulse_ISR(void* arg) {
+	auto c = reinterpret_cast<LEDClient*>(arg);
 	BaseType_t higher_prio_task_woken = 0;
 	vTaskNotifyGiveFromISR(c->led_task_, &higher_prio_task_woken);
-	timer_spinlock_give(LED_TIMER_GROUP);
 	if (higher_prio_task_woken == pdTRUE) {
 		portYIELD_FROM_ISR();
 	}

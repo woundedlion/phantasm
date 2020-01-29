@@ -1,7 +1,7 @@
 #pragma once
 #include <sstream>
 #include "asio.hpp"
-#include "driver/timer.h"
+#include "driver/gpio.h"
 #include "App.h"
 #include "WifiClient.h"
 #include "SPI.h"
@@ -41,7 +41,6 @@ private:
 	asio::ip::tcp::endpoint remote_ep_;
 	asio::ip::tcp::socket sock_;
 	std::vector<uint8_t> id_;
-	DoubleBuffer<RGB, W, STRIP_H> bufs_;
 	bool read_pending_;
 };
 
@@ -71,32 +70,31 @@ private:
 		READY,
 	};
 
-	static const timer_group_t LED_TIMER_GROUP = TIMER_GROUP_1;
-	static const timer_idx_t LED_TIMER = TIMER_0;
-	static const uint16_t LED_TIMER_DIVIDER = 17361;
+	static const gpio_num_t PIN_CLOCK_GEN = GPIO_NUM_15;
+	static const gpio_num_t PIN_CLOCK_READ = GPIO_NUM_2;
 
 	State state_;
 	esp::WifiClient wifi_;
 	std::unique_ptr<ServerConnection> connection_;
 	esp_timer_handle_t connect_timer_;
 	std::unique_ptr<SPI> spi_;
-	uint32_t x_;
+	volatile uint32_t x_;
 	TaskHandle_t led_task_;
 	static void run_leds(void * arg);
 
 	static void handle_event(void* arg, esp_event_base_t base, int32_t id, void* data);
-	static void handle_led_event(void* arg, esp_event_base_t base, int32_t id, void* data);
 	void state_stopped(esp_event_base_t base, int32_t id, void* data);
 	void state_ready(esp_event_base_t base, int32_t id, void* data);
 
-	void connect_timer_start();
+	void start_connect_timer();
+	void stop_connect_timer();
 	static void handle_connect_timer(void *arg);
-	void start_led_timer();
-	void stop_led_timer();
-	static void handle_led_timer_ISR(void *);
 
 	void on_got_ip();
 	void on_conn_err();
 	void read();
 
+	void start_gpio();
+	void stop_gpio();
+	static void handle_clock_pulse_ISR(void *arg);
 };

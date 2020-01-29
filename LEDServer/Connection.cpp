@@ -36,7 +36,7 @@ void Connection::cancel() {
   if (!canceled_) {
     canceled_ = true;
     sock_.cancel();
-    sock_.shutdown(tcp::socket::shutdown_both);
+    //    sock_.shutdown(tcp::socket::shutdown_both);
     sock_.close();
     LOG(info) << "Connection canceled: " << key();
     server_.get().post_connection_error(shared_from_this());

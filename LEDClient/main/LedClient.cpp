@@ -13,9 +13,10 @@ namespace {
 	const char* TAG = "LedClient";
 	const char* SERVER_ADDR = "192.168.0.200";
 	const int SERVER_PORT = 5050;
-	LEDClient app;
+	LEDClient led_client;
 	DoubleBuffer<RGB, W, STRIP_H> bufs_;
 	APA102Frame<STRIP_H> frame_;
+	APA102Frame<STRIP_H> background_;
 }
 
 LEDClient::LEDClient() :
@@ -37,7 +38,9 @@ LEDClient::LEDClient() :
 
 LEDClient::~LEDClient() {
 	stop_connect_timer();
-	// TODO: Clean up LED timer task
+	if (led_task_) {
+		vTaskDelete(led_task_);
+	}
 }
 
 void LEDClient::start() {
@@ -45,9 +48,8 @@ void LEDClient::start() {
 }
 
 void IRAM_ATTR LEDClient::send_pixels() {
-	if (connection_) {
-		*spi_ << frame_;
-	}
+	*spi_ << frame_;
+	*spi_ << background_;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -71,6 +73,9 @@ void LEDClient::handle_event(void* arg, esp_event_base_t base, int32_t id, void*
 			break;
 		case READY:
 			handler->state_ready(base, id, data);
+			break;
+		case ACTIVE:
+			handler->state_active(base, id, data);
 			break;
 		default:
 			assert(false);
@@ -104,9 +109,11 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
 		on_conn_err();
 		break;
 	case LED_EVENT_CONN_ACTIVE:
-		ESP_LOGI(TAG, "Connection active");
+		ESP_LOGI(TAG, "State transition: %s -> %s on %d", "READY", "ACTIVE", id);
+		state_ = ACTIVE;
 		break;
 	case LED_EVENT_NEED_FRAME:
+		// No connection yet, skip frame request
 		if (connection_) {
 			connection_->advance_frame();
 		}
@@ -116,6 +123,26 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
 	}
 }
 
+void LEDClient::state_active(esp_event_base_t base, int32_t id, void* data) {
+	switch (id) {
+	case IP_EVENT_STA_GOT_IP:
+		ESP_LOGI(TAG, "State transition: %s -> %s on %d", "ACTIVE", "READY", id);
+		state_ = READY;
+		on_got_ip();
+		break;
+	case LED_EVENT_CONN_ERR:
+		ESP_LOGI(TAG, "State transition: %s -> %s on %d", "ACTIVE", "READY", id);
+		state_ = READY;
+		on_conn_err();
+		break;
+	case LED_EVENT_NEED_FRAME:
+		assert(connection_);
+		connection_->advance_frame();
+		break;
+	default:
+		ESP_LOGW(TAG, "Unhandled event id: %d", id);
+	}
+}
 void LEDClient::on_got_ip() {
 	try {
 		ESP_LOGI(TAG, "Resetting client connection on IP change");
@@ -171,13 +198,6 @@ void IRAM_ATTR LEDClient::handle_clock_pulse_ISR(void* arg) {
 		c->x_ = 0;
 		esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, portMAX_DELAY);
 	}
-   /*
-	BaseType_t higher_prio_task_woken = 0;
-	vTaskNotifyGiveFromISR(c->led_task_, &higher_prio_task_woken);
-	if (higher_prio_task_woken == pdTRUE) {
-		portYIELD_FROM_ISR();
-	}
-	*/
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -255,16 +275,12 @@ void ServerConnection::read_frame() {
 void ServerConnection::advance_frame() {
 	if (!read_pending_) {
 		bufs_.swap();
-		frame_.load(get_frame());
+		frame_.load(bufs_.front());
 		send_ready();
 	}
 	else {
 		ESP_LOGW(TAG, "Frame delayed");
 	}
-}
-
-RGB* ServerConnection::get_frame() {
-	return bufs_.front();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -298,7 +314,7 @@ void ServerConnection::post_conn_active() {
 extern "C" void app_main(void)
 {
 	try {
-		app.start();
+		led_client.start();
 	}
 	catch (const std::exception& e) {
 		ESP_LOGE(TAG, "%s", e.what());

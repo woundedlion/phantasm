@@ -52,9 +52,6 @@ void WifiClient::start() {
 	ERR_THROW(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_cfg));
 
 	ERR_THROW(esp_wifi_start());
-
-//	ERR_THROW(esp_wifi_set_csi_rx_cb(WifiClient::handle_csi, this));
-//	ERR_THROW(esp_wifi_set_csi(true));
 }
 
 void WifiClient::handle_csi(void* ctx, wifi_csi_info_t* data) {

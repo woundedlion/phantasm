@@ -24,7 +24,6 @@ public:
 	void send_header();
 	void read_frame();
 	void advance_frame();
-	RGB* get_frame();
 
 private:
 
@@ -68,6 +67,7 @@ private:
 	enum State {
 		STOPPED,
 		READY,
+		ACTIVE,
 	};
 
 	static const gpio_num_t PIN_CLOCK_GEN = GPIO_NUM_15;
@@ -86,6 +86,7 @@ private:
 	static void handle_event(void* arg, esp_event_base_t base, int32_t id, void* data);
 	void state_stopped(esp_event_base_t base, int32_t id, void* data);
 	void state_ready(esp_event_base_t base, int32_t id, void* data);
+	void state_active(esp_event_base_t base, int32_t id, void* data);
 
 	void start_connect_timer();
 	void stop_connect_timer();

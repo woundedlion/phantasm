@@ -33,7 +33,7 @@ class APA102Frame {
 public:
 	APA102Frame() {
 		auto w = frame_;
-		std::fill(w, w + 4, 0);
+		std::fill(w, w + S * 4, 0);
 		w += 4 + S * 4;
 		std::fill(w, frame_ + size(), 1);
 	}

@@ -1,9 +1,10 @@
 #include <iostream>
-#include <thread>
 #include "LedClient.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "LEDC.h"
+#include "freertos/xtensa_timer.h"
+#include "freertos/xtensa_api.h"
 
 ESP_EVENT_DEFINE_BASE(LED_EVENT);
 
@@ -30,10 +31,9 @@ LEDClient::LEDClient() :
 	args.name = "connect_timer";
 	ERR_THROW(esp_timer_create(&args, &connect_timer_));
 
+//	ERR_THROW(esp_event_handler_register(ESP_EVENT_ANY_BASE, ESP_EVENT_ANY_ID, LEDClient::dump_event, this));
 	ERR_THROW(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, LEDClient::handle_event, this));
 	ERR_THROW(esp_event_handler_register(LED_EVENT, ESP_EVENT_ANY_ID, LEDClient::handle_event, this));
-
-	xTaskCreatePinnedToCore(LEDClient::run_leds, "LED_LOOP", 2048, this, 0, &led_task_, 1);
 }
 
 LEDClient::~LEDClient() {
@@ -45,6 +45,7 @@ LEDClient::~LEDClient() {
 
 void LEDClient::start() {
 	wifi_.start();
+	xTaskCreatePinnedToCore(LEDClient::run_leds, "LED_LOOP", 2048, this, 21, &led_task_, 1);
 }
 
 void IRAM_ATTR LEDClient::send_pixels() {
@@ -53,14 +54,25 @@ void IRAM_ATTR LEDClient::send_pixels() {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 void IRAM_ATTR LEDClient::run_leds(void* arg) {
 	auto c = reinterpret_cast<LEDClient*>(arg);
 	c->spi_.reset(new SPI());
 	SquareWaveGenerator<W * 16, PIN_CLOCK_GEN> clock;
 	c->start_gpio();
+	ets_isr_mask(1<<XT_TIMER_INTNUM);
 	while (true) {
-		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+		while (0 == (REG_READ(GPIO_IN_REG) & (1 << PIN_CLOCK_READ))) {}
+		c->send_pixels();
+		if (++c->x_ == W) {
+			c->x_ = 0;
+			esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, portMAX_DELAY);
+		}
 	}
+}
+
+void LEDClient::dump_event(void* arg, esp_event_base_t base, int32_t id, void* data) {
+	ESP_LOGI(TAG, "base: %s id: %d", base, id);
 }
 
 void LEDClient::handle_event(void* arg, esp_event_base_t base, int32_t id, void* data) {
@@ -114,9 +126,6 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
 		break;
 	case LED_EVENT_NEED_FRAME:
 		// No connection yet, skip frame request
-		if (connection_) {
-			connection_->advance_frame();
-		}
 		break;
 	default:
 		ESP_LOGW(TAG, "Unhandled event id: %d", id);
@@ -174,30 +183,21 @@ void LEDClient::handle_connect_timer(void* arg) {
 }
 
 void LEDClient::start_gpio() {
-	gpio_config_t cfg = {};
-	cfg.pin_bit_mask = 1ULL << PIN_CLOCK_READ;
-	cfg.mode = GPIO_MODE_INPUT;
-	cfg.pull_up_en = GPIO_PULLUP_DISABLE;
-	cfg.pull_down_en = GPIO_PULLDOWN_ENABLE;
-	cfg.intr_type = GPIO_INTR_POSEDGE;
-	ERR_THROW(gpio_config(&cfg));
-
-	ERR_THROW(gpio_install_isr_service(ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL3));
-	ERR_THROW(gpio_isr_handler_add(PIN_CLOCK_READ, LEDClient::handle_clock_pulse_ISR, this));
+	try {
+		gpio_config_t cfg = {};
+		cfg.pin_bit_mask = 1ULL << PIN_CLOCK_READ;
+		cfg.mode = GPIO_MODE_INPUT;
+		cfg.pull_up_en = GPIO_PULLUP_DISABLE;
+		cfg.pull_down_en = GPIO_PULLDOWN_ENABLE;
+		cfg.intr_type = GPIO_INTR_DISABLE;
+		ERR_THROW(gpio_config(&cfg));
+	}
+	catch (const std::exception& e) {
+		ESP_LOGE(TAG, "%s", e.what());
+	}
 }
 
 void LEDClient::stop_gpio() {
-	gpio_uninstall_isr_service();
-	ERR_LOG("gpio_isr_handler_remove", gpio_isr_handler_remove(PIN_CLOCK_READ));
-}
-
-void IRAM_ATTR LEDClient::handle_clock_pulse_ISR(void* arg) {
-	auto c = reinterpret_cast<LEDClient*>(arg);
-	c->send_pixels();
-	if (++c->x_ == W) {
-		c->x_ = 0;
-		esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, portMAX_DELAY);
-	}
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -212,10 +212,7 @@ ServerConnection::ServerConnection(uint32_t src, uint32_t dst, const std::vector
 	read_pending_(false)
 {
 	connect();
-	io_thread_ = std::thread([this]() { 
-		ctx_.run();
-		ESP_LOGI(TAG, "IO thread exiting");
-		});
+	xTaskCreatePinnedToCore(ServerConnection::run_io, "IO_LOOP", 4096, this, 17, &io_task_, 0);
 }
 
 ServerConnection::~ServerConnection() {
@@ -223,7 +220,12 @@ ServerConnection::~ServerConnection() {
 			sock_.cancel();
 			sock_.close();
 		});
-	io_thread_.join();
+}
+
+void ServerConnection::run_io(void* arg) {
+	auto c = reinterpret_cast<ServerConnection*>(arg);
+	c->ctx_.run();
+	vTaskDelete(NULL);
 }
 
 void ServerConnection::connect() {
@@ -261,8 +263,8 @@ void ServerConnection::read_frame() {
 		[this](const std::error_code& ec, std::size_t bytes) {
 			if (!ec && bytes) {
 				bufs_.inc_used();
-				ESP_LOGI(TAG, "Read complete: %d bytes", bytes);
 				read_pending_ = false;
+				ESP_LOGI(TAG, "Read complete: %d bytes", bytes);
 				read_frame();
 			}
 			else if (ec != std::errc::operation_canceled) {
@@ -275,11 +277,19 @@ void ServerConnection::read_frame() {
 void ServerConnection::advance_frame() {
 	if (!read_pending_) {
 		bufs_.swap();
-		frame_.load(bufs_.front());
 		send_ready();
+		frame_.load(bufs_.front());
 	}
 	else {
+//		static uint64_t last = 0;
+//		uint64_t now = esp_timer_get_time();
 		ESP_LOGW(TAG, "Frame delayed");
+//		ESP_LOGW(TAG, "Frame delayed: %" PRIu64,  now - last);
+//		last = now;
+/*		char dump[400];
+		vTaskGetRunTimeStats(dump);
+		ESP_LOGE(TAG, "%s", dump);
+		*/
 	}
 }
 

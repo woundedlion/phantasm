@@ -20,7 +20,7 @@ SPI::SPI() {
 	dev_cfg.duty_cycle_pos = 128;
 	dev_cfg.cs_ena_pretrans = 0;
 	dev_cfg.cs_ena_posttrans = 0;
-	dev_cfg.clock_speed_hz = 20 * 1000000;
+	dev_cfg.clock_speed_hz = 24 * 1000000;
 	dev_cfg.input_delay_ns = 0;
 	dev_cfg.spics_io_num = -1;
 	dev_cfg.flags = 0;
@@ -28,11 +28,11 @@ SPI::SPI() {
 	dev_cfg.pre_cb = NULL;
 	dev_cfg.post_cb = NULL;
 	ERR_THROW(spi_bus_add_device(VSPI_HOST, &dev_cfg, &device_));
-//	ERR_THROW(spi_device_acquire_bus(device_, portMAX_DELAY));
+	ERR_THROW(spi_device_acquire_bus(device_, portMAX_DELAY));
 }
 
 SPI::~SPI() {
-//	spi_device_release_bus(device_);
+	spi_device_release_bus(device_);
 	spi_bus_remove_device(device_);
 	spi_bus_free(VSPI_HOST);
 }

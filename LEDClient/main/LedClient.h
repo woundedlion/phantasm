@@ -27,6 +27,7 @@ public:
 
 private:
 
+	static void run_io(void* arg);
 	void send_ready();
 	void post_conn_err();
 	void post_conn_active();
@@ -35,12 +36,12 @@ private:
 	uint32_t src_;
 	uint32_t dst_;
 	asio::io_context ctx_;
-	std::thread io_thread_;
+	TaskHandle_t io_task_;
 	asio::ip::tcp::endpoint local_ep_;
 	asio::ip::tcp::endpoint remote_ep_;
 	asio::ip::tcp::socket sock_;
 	std::vector<uint8_t> id_;
-	bool read_pending_;
+	volatile bool read_pending_;
 };
 
 ESP_EVENT_DECLARE_BASE(LED_EVENT);
@@ -83,6 +84,7 @@ private:
 
 	static void run_leds(void * arg);
 
+	static void dump_event(void* arg, esp_event_base_t base, int32_t id, void* data);
 	static void handle_event(void* arg, esp_event_base_t base, int32_t id, void* data);
 	void state_stopped(esp_event_base_t base, int32_t id, void* data);
 	void state_ready(esp_event_base_t base, int32_t id, void* data);
@@ -98,5 +100,4 @@ private:
 
 	void start_gpio();
 	void stop_gpio();
-	static void handle_clock_pulse_ISR(void *arg);
 };

@@ -12,12 +12,12 @@ using namespace esp;
 
 namespace {
 	const char* TAG = "LedClient";
-	const char* SERVER_ADDR = "192.168.0.200";
+	const char* SERVER_ADDR = "10.10.10.1";
 	const int SERVER_PORT = 5050;
 	LEDClient led_client;
 	DoubleBuffer<RGB, W, STRIP_H> bufs_;
 	APA102Frame<STRIP_H> frame_;
-	APA102Frame<STRIP_H> background_;
+//	APA102Frame<STRIP_H> background_;
 }
 
 LEDClient::LEDClient() :
@@ -30,8 +30,6 @@ LEDClient::LEDClient() :
 	args.dispatch_method = ESP_TIMER_TASK;
 	args.name = "connect_timer";
 	ERR_THROW(esp_timer_create(&args, &connect_timer_));
-
-//	ERR_THROW(esp_event_handler_register(ESP_EVENT_ANY_BASE, ESP_EVENT_ANY_ID, LEDClient::dump_event, this));
 	ERR_THROW(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, LEDClient::handle_event, this));
 	ERR_THROW(esp_event_handler_register(LED_EVENT, ESP_EVENT_ANY_ID, LEDClient::handle_event, this));
 }
@@ -45,12 +43,11 @@ LEDClient::~LEDClient() {
 
 void LEDClient::start() {
 	wifi_.start();
-	xTaskCreatePinnedToCore(LEDClient::run_leds, "LED_LOOP", 2048, this, 21, &led_task_, 1);
 }
 
 void IRAM_ATTR LEDClient::send_pixels() {
 	*spi_ << frame_;
-	*spi_ << background_;
+//	*spi_ << background_;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -60,9 +57,9 @@ void IRAM_ATTR LEDClient::run_leds(void* arg) {
 	c->spi_.reset(new SPI());
 	SquareWaveGenerator<W * 16, PIN_CLOCK_GEN> clock;
 	c->start_gpio();
-	ets_isr_mask(1<<XT_TIMER_INTNUM);
+	ets_isr_mask(1ULL << XT_TIMER_INTNUM);
 	while (true) {
-		while (0 == (REG_READ(GPIO_IN_REG) & (1 << PIN_CLOCK_READ))) {}
+		while (0 == (REG_READ(GPIO_IN_REG) & (1ULL << PIN_CLOCK_READ))) {}
 		c->send_pixels();
 		if (++c->x_ == W) {
 			c->x_ = 0;
@@ -102,6 +99,7 @@ void LEDClient::state_stopped(esp_event_base_t base, int32_t id, void* data) {
 	case IP_EVENT_STA_GOT_IP:
 		ESP_LOGI(TAG, "State transition: %s -> %s on %d", "STOPPED", "READY", id);
 		state_ = READY;
+		xTaskCreatePinnedToCore(LEDClient::run_leds, "LED_LOOP", 2048, this, configMAX_PRIORITIES - 1, &led_task_, 1);
 		on_got_ip();
 		break;
 	case LED_EVENT_NEED_FRAME:
@@ -220,12 +218,13 @@ ServerConnection::~ServerConnection() {
 			sock_.cancel();
 			sock_.close();
 		});
+	vTaskDelete(io_task_);
 }
 
 void ServerConnection::run_io(void* arg) {
 	auto c = reinterpret_cast<ServerConnection*>(arg);
 	c->ctx_.run();
-	vTaskDelete(NULL);
+	while (true) {}
 }
 
 void ServerConnection::connect() {
@@ -281,13 +280,10 @@ void ServerConnection::advance_frame() {
 		frame_.load(bufs_.front());
 	}
 	else {
-//		static uint64_t last = 0;
-//		uint64_t now = esp_timer_get_time();
 		ESP_LOGW(TAG, "Frame delayed");
-//		ESP_LOGW(TAG, "Frame delayed: %" PRIu64,  now - last);
-//		last = now;
-/*		char dump[400];
-		vTaskGetRunTimeStats(dump);
+/*
+char dump[400];
+		vTaskList(dump);
 		ESP_LOGE(TAG, "%s", dump);
 		*/
 	}

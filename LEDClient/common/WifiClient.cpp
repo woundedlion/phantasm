@@ -47,8 +47,8 @@ void WifiClient::start() {
 	ERR_THROW(esp_wifi_set_mode(WIFI_MODE_STA));
 
 	auto wifi_cfg = wifi_config_t();
-	strcpy(reinterpret_cast<char*>(wifi_cfg.sta.ssid), "DEATHVALLEY");
-	strcpy(reinterpret_cast<char*>(wifi_cfg.sta.password), "iliketheas");
+	strcpy(reinterpret_cast<char*>(wifi_cfg.sta.ssid), "phantasm");
+	strcpy(reinterpret_cast<char*>(wifi_cfg.sta.password), "phantasm");
 	ERR_THROW(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_cfg));
 
 	ERR_THROW(esp_wifi_start());

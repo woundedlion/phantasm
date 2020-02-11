@@ -35,20 +35,9 @@ public:
 		auto w = frame_;
 		std::fill(w, w + S * 4, 0);
 		w += 4 + S * 4;
-		std::fill(w, frame_ + size(), 1);
-	}
-
-	APA102Frame(const RGB* data) {
-		auto w = frame_;
-		std::fill(w, w + 4, 0);
-		w += 4;
-		for (auto p = data; p < data + S; ++p) {
-			*w++ = 0xff; // 0xe0 + 5 bits brightness 
-			*w++ = p->b_;
-			*w++ = p->g_;
-			*w++ = p->r_;
-		}
-		std::fill(w, frame_ + size(), 1);
+		std::fill(w, frame_ + size() / 2, 1);
+		w = frame_ + size() / 2;
+		std::copy(frame_, w, w);
 	}
 
 	APA102Frame& IRAM_ATTR load(RGB* data) {
@@ -67,5 +56,9 @@ public:
 
 private:
 
-	uint8_t frame_[4 + (S * 4) + ((((S + 1) / 2) + 7) / 8)];
+	uint8_t frame_[ 2 * (
+		4 // start frame
+		+ (S * 4) // LED frames
+		+ ((((S + 1) / 2) + 7) / 8) // end frame
+	)];
 };

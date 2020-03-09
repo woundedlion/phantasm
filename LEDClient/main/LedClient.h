@@ -71,8 +71,8 @@ private:
 		ACTIVE,
 	};
 
-	static const gpio_num_t PIN_CLOCK_GEN = GPIO_NUM_32;
-	static const gpio_num_t PIN_CLOCK_READ = GPIO_NUM_25;
+	static const gpio_num_t PIN_CLOCK_GEN = GPIO_NUM_25;
+	static const gpio_num_t PIN_CLOCK_READ = GPIO_NUM_26;
 
 	State state_;
 	esp::WifiClient wifi_;

@@ -57,7 +57,7 @@ protected:
 
 class Test : public Effect {
 public:
-	Test() {}
+	Test() : y_(0){}
 
 	bool show_bg() { return true; }
 
@@ -65,9 +65,16 @@ public:
 		Canvas<W, H> c(this->bufs_);
 		for (int x = 0; x < W; ++x) {
 			for (int y = 0; y < H; ++y) {
-				c[x][y] = RGB(0x55, 0x55, 0x55);
+				if (y == y_) {
+					c[x][y] = RGB(0x00, 0xff, 0x00);
+				} else {
+					c[x][y] = RGB(0x00, 0x00, 0x00);
+				}
+				y_ = (y_ + 1) % 48;
 			}
 		}
 	}
+
+	int y_;
 };
 

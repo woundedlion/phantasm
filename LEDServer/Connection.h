@@ -3,6 +3,7 @@
 #include <chrono>
 #include <memory>
 #include <boost/asio.hpp>
+#include <functional>
 
 class LEDServer;
 class IOThread;
@@ -23,14 +24,15 @@ public:
   void post_cancel();
   void set_ready(bool ready) { ready_ = ready; }
   bool ready() const { return ready_; }
-  void send(const boost::asio::const_buffer& buf);
-
+  void post_send(const boost::asio::const_buffer& buf, 
+    std::function<void ()> callback);
   key_t key() const { return key_; }
   std::string id_str() const;
-  boost::asio::io_context& ctx();
   
 private:
 
+  void send(const boost::asio::const_buffer& buf,
+    std::function<void()> callback);
   void cancel();
   void read_header();
   void read_ready();

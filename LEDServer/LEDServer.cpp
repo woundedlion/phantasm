@@ -1,6 +1,7 @@
 #include "LEDServer.h"
 
 #include <boost/log/trivial.hpp>
+#include <cassert>
 #define LOG(X) BOOST_LOG_TRIVIAL(X)
 
 using namespace boost::asio;
@@ -20,7 +21,8 @@ IOThread::IOThread()
       }) {}
 
 LEDServer::LEDServer()
-    : shutdown_(false),
+    : frames_in_flight_(0),
+      shutdown_(false),
       signals_(main_io_, SIGINT, SIGTERM),
       accept_sock_(main_io_, tcp::endpoint(tcp::v4(), 5050)) {}
 
@@ -62,6 +64,8 @@ void LEDServer::post_connection_error(std::shared_ptr<Connection> client) {
     } else {
       LOG(error) << "Connection not found: " << client->key();
     }
+    clients_.clear();
+    frames_in_flight_ = 0;
   });
 }
 
@@ -70,6 +74,7 @@ void LEDServer::post_client_ready(std::shared_ptr<Connection> client) {
     client->set_ready(true);
     if (std::all_of(clients_.begin(), clients_.end(),
                     [](auto& c) { return c->ready(); })) {
+      frames_in_flight_ = 0;
       send_frame();
     }
   });
@@ -81,7 +86,7 @@ std::shared_ptr<IOThread> LEDServer::io_schedule() {
                            [](const auto& a, const auto& b) {
                              return a.use_count() < b.use_count();
                            });
-}
+} 
 
 void LEDServer::accept() {
   auto io = io_schedule();
@@ -90,8 +95,9 @@ void LEDServer::accept() {
         if (!ec) {
           LOG(info) << "Connection accepted: " << client_sock.remote_endpoint()
                     << " -> " << client_sock.local_endpoint();
+          socket_base::send_buffer_size option(512000);
+          client_sock.set_option(option);
           auto c = std::make_shared<Connection>(*this, client_sock, io);
-          kickoff_existing(c->key());
           clients_.emplace(std::move(c));
           accept();
         } else {
@@ -102,14 +108,6 @@ void LEDServer::accept() {
           }
         }
       });
-}
-
-void LEDServer::kickoff_existing(const Connection::key_t& key) {
-  std::for_each(clients_.begin(), clients_.end(), [&](auto& c) {
-    if (c->key() == key) {
-      c->post_cancel();
-    }
-  });
 }
 
 void LEDServer::subscribe_signals() {
@@ -125,16 +123,25 @@ void LEDServer::subscribe_signals() {
 }
 
 void LEDServer::send_frame() {
+  LOG(debug) << "send_frame";
   effect_->wait_frame_available();
+  LOG(debug) << "frame_available";
+  assert(frames_in_flight_ == 0);
+  frames_in_flight_ = clients_.size();
   for (auto& c : clients_) {
-    post(c->ctx(), [&]() {
-      LOG(debug) << "Sending frame " << effect_->frame_count()
-                 << " to client id " << c->id_str();
-      c->set_ready(false);
-      c->send(effect_->buf(0));
-    });
+    LOG(debug) << "Sending frame " << effect_->frame_count() << " to client id "
+               << c->id_str();
+    c->post_send(effect_->buf(0), [this]() { this->post_send_frame_complete(); });
   }
   effect_->advance_frame();
+}
+
+void LEDServer::post_send_frame_complete() {
+  post(main_io_, [&]() {
+    if (--frames_in_flight_ == 0) {
+      this->send_frame();
+    }
+  });
 }
 
 int main(int argc, char* argv[]) {

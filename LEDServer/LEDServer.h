@@ -35,10 +35,11 @@ class LEDServer {
  private:
   std::shared_ptr<IOThread> io_schedule();
   void accept();
-  void kickoff_existing(const Connection::key_t& key);
   void subscribe_signals();
   void send_frame();
+  void post_send_frame_complete();
 
+  int frames_in_flight_;
   std::unique_ptr<Effect> effect_;
   bool shutdown_;
   boost::asio::io_context main_io_;

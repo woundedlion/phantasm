@@ -16,7 +16,6 @@ const char* TAG = "LedClient";
 const char* SERVER_ADDR = "10.10.10.1";
 const int SERVER_PORT = 5050;
 LEDClient led_client;
-DoubleBuffer<RGB, W, STRIP_H> bufs_;
 APA102Frame<STRIP_H> frame_;
 //	APA102Frame<STRIP_H> background_;
 }  // namespace
@@ -127,6 +126,7 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
       xTaskCreatePinnedToCore(LEDClient::run_leds, "LED_LOOP", 2048, this,
                               configMAX_PRIORITIES - 1, &led_task_, 1);
       start_prefetch_timer();
+      connection_->read_frame();
       break;
     default:
       ESP_LOGW(TAG, "Unhandled event id: %d", id);
@@ -199,10 +199,10 @@ void LEDClient::stop_prefetch_timer() {
 void LEDClient::handle_prefetch_timer(void* arg) {
   auto c = static_cast<LEDClient*>(arg);
   size_t level = c->connection_->buffer_level();
-  size_t size = c->connection_->buffer_size();
-  ESP_LOGI(TAG, "Rcv buf of size %d contains %d bytes", size, level);
+  size_t depth = c->connection_->buffer_depth();
+  ESP_LOGI(TAG, "Jitter buffer level: %d/%d", level, depth);
   // Start led clock if rcv buffer is full
-  if (level >= size - bufs_.size()) {
+  if (level == depth) {
     c->stop_prefetch_timer();
     c->led_clock_.reset(new SquareWaveGenerator<W * 16, PIN_CLOCK_GEN>());
   } else {
@@ -236,7 +236,7 @@ ServerConnection::ServerConnection(uint32_t src, uint32_t dst,
       remote_ep_(asio::ip::address_v4(dst_), SERVER_PORT),
       sock_(ctx_, local_ep_),
       id_(mac),
-      read_pending_(false) {
+      bufs_(new JitterBuffer()) {
   connect();
   xTaskCreatePinnedToCore(ServerConnection::run_io, "IO_LOOP", 4096, this, 17,
                           &io_task_, 0);
@@ -256,18 +256,9 @@ void ServerConnection::run_io(void* arg) {
   c->ctx_.run();
 }
 
-size_t ServerConnection::buffer_size() {
-//  asio::socket_base::receive_buffer_size opt;
-//  sock_.get_option(opt);
-//  return opt.value();
-  return 350000;
-}
+size_t ServerConnection::buffer_depth() { return bufs_->depth(); }
 
-size_t ServerConnection::buffer_level() {
-  asio::socket_base::bytes_readable cmd(true);
-  sock_.io_control(cmd);
-  return cmd.get();
-}
+size_t ServerConnection::buffer_level() { return bufs_->level(); }
 
 void ServerConnection::connect() {
   ESP_LOGI(TAG, "Connecting to %s", to_string(remote_ep_).c_str());
@@ -303,27 +294,29 @@ void ServerConnection::send_header() {
 }
 
 void ServerConnection::read_frame() {
-  assert(read_pending_ == false);
-  read_pending_ = true;
-  ESP_LOGI(TAG, "Read Starting: %d bytes", bufs_.size());
-  asio::async_read(sock_, asio::buffer((void*)bufs_.back(), bufs_.size()),
+  ESP_LOGI(TAG, "Jitter buffer level: %d/%d", bufs_->level(), bufs_->depth());
+  assert(bufs_->level() < bufs_->depth());
+  ESP_LOGI(TAG, "Read Starting: %d bytes", bufs_->size());
+  asio::async_read(sock_,
+                   asio::buffer((void*)bufs_->push_back(), bufs_->size()),
                    [this](const std::error_code& ec, std::size_t bytes) {
-                     read_pending_ = false;
                      if (!ec && bytes) {
-                       bufs_.inc_used();
                        ESP_LOGI(TAG, "Read complete: %d bytes", bytes);
+                       if (bufs_->level() < bufs_->depth()) {
+                         read_frame();
+                       }
                      } else if (ec != std::errc::operation_canceled) {
                        ESP_LOGE(TAG, "Read error: %s", ec.message().c_str());
                        post_conn_err();
                      }
                    });
-  ESP_LOGI(TAG, "Read Started: %d bytes", bufs_.size());
+  ESP_LOGI(TAG, "Read Started: %d bytes", bufs_->size());
 }
 
 void ServerConnection::advance_frame() {
-  if (!read_pending_) {
-    bufs_.swap();
-    frame_.load(bufs_.front());
+  if (bufs_->level()) {
+    frame_.load(bufs_->front());
+    bufs_->pop();
     read_frame();
   } else {
     ESP_LOGW(TAG, "Frame delayed, buffer level: %d", buffer_level());
@@ -332,7 +325,6 @@ void ServerConnection::advance_frame() {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
-
 
 void ServerConnection::post_conn_err() {
   ERR_THROW(esp_event_post(LED_EVENT, LED_EVENT_CONN_ERR, NULL, 0, 0));

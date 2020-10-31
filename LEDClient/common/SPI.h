@@ -40,7 +40,7 @@ public:
 		std::copy(frame_, w, w);
 	}
 
-	APA102Frame& IRAM_ATTR load(RGB* data) {
+	APA102Frame& IRAM_ATTR load(const RGB* data) {
 		auto w = frame_ + 4;
 		for (auto p = data; p < data + S; ++p) {
 			*w++ = 0xff; // 0xe0 + 5 bits brightness 

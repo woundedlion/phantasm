@@ -2,13 +2,19 @@
 #include <sstream>
 
 #include "App.h"
-#include "LEDServer/Types.h"
-#include "LEDServer/DoubleBuffer.h"
-#include "SPI.h"
 #include "LEDC.h"
+#include "LEDServer/Types.h"
+#include "RingBuffer.h"
+#include "SPI.h"
 #include "WifiClient.h"
+
 #include "asio.hpp"
 #include "driver/gpio.h"
+
+const int W = 288;
+const int H = 144;
+const int STRIP_H = 48;
+const int JITTER_BUFFER_DEPTH = 8;
 
 template <typename T>
 std::string to_string(const T& t) {
@@ -22,13 +28,15 @@ class ServerConnection {
   ServerConnection(uint32_t src, uint32_t dst, const std::vector<uint8_t>& id);
   ~ServerConnection();
   size_t buffer_level();
-  size_t buffer_size();
+  size_t buffer_depth();
   void connect();
   void send_header();
   void read_frame();
   void advance_frame();
 
  private:
+  typedef RingBuffer<RGB, W, STRIP_H, JITTER_BUFFER_DEPTH> JitterBuffer;
+
   static void run_io(void* arg);
   void post_conn_err();
   void post_conn_active();
@@ -41,7 +49,7 @@ class ServerConnection {
   asio::ip::tcp::endpoint remote_ep_;
   asio::ip::tcp::socket sock_;
   std::vector<uint8_t> id_;
-  volatile bool read_pending_;
+  std::unique_ptr<JitterBuffer> bufs_;
 };
 
 ESP_EVENT_DECLARE_BASE(LED_EVENT);

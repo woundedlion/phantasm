@@ -41,7 +41,9 @@ LEDClient::LEDClient() : state_(STOPPED), x_(0) {
 
 LEDClient::~LEDClient() {
   stop_connect_timer();
+  ERR_LOG("esp_timer_delete", esp_timer_delete(connect_timer_));
   stop_prefetch_timer();
+  ERR_LOG("esp_timer_delete", esp_timer_delete(prefetch_timer_));
   if (led_task_) {
     vTaskDelete(led_task_);
   }
@@ -146,6 +148,7 @@ void LEDClient::state_active(esp_event_base_t base, int32_t id, void* data) {
     case LED_EVENT_CONN_ERR:
       ESP_LOGI(TAG, "State transition: %s -> %s on %d", "ACTIVE", "READY", id);
       state_ = READY;
+      stop_prefetch_timer();
       on_conn_err();
       break;
     case LED_EVENT_NEED_FRAME:
@@ -169,7 +172,6 @@ void LEDClient::on_got_ip() {
 void LEDClient::on_conn_err() {
   connection_.reset();
   led_clock_.reset();
-  stop_prefetch_timer();
   start_connect_timer();
 }
 
@@ -180,7 +182,6 @@ void LEDClient::start_connect_timer() {
 
 void LEDClient::stop_connect_timer() {
   ERR_LOG("esp_timer_stop", esp_timer_stop(connect_timer_));
-  ERR_LOG("esp_timer_delete", esp_timer_delete(connect_timer_));
 }
 
 void LEDClient::handle_connect_timer(void* arg) {
@@ -198,7 +199,6 @@ void LEDClient::start_prefetch_timer() {
 void LEDClient::stop_prefetch_timer() {
   ESP_LOGI(TAG, "Stopping prefetch_timer...");
   ERR_LOG("esp_timer_stop", esp_timer_stop(prefetch_timer_));
-  ERR_LOG("esp_timer_delete", esp_timer_delete(prefetch_timer_));
 }
 
 void LEDClient::handle_prefetch_timer(void* arg) {

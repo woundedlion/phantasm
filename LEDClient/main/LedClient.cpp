@@ -15,7 +15,7 @@ namespace {
 const char* TAG = "LedClient";
 const char* SERVER_ADDR = "10.10.10.1";
 const int SERVER_PORT = 5050;
-LEDClient led_client;
+std::unique_ptr<LEDClient> led_client;
 APA102Frame<STRIP_H> frame_;
 //	APA102Frame<STRIP_H> background_;
 }  // namespace
@@ -33,7 +33,6 @@ LEDClient::LEDClient() : state_(STOPPED), x_(0) {
   args.dispatch_method = ESP_TIMER_TASK;
   args.name = "prefetch_timer";
   ERR_THROW(esp_timer_create(&args, &prefetch_timer_));
-
   ERR_THROW(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
                                        LEDClient::handle_event, this));
   ERR_THROW(esp_event_handler_register(LED_EVENT, ESP_EVENT_ANY_ID,
@@ -42,6 +41,7 @@ LEDClient::LEDClient() : state_(STOPPED), x_(0) {
 
 LEDClient::~LEDClient() {
   stop_connect_timer();
+  stop_prefetch_timer();
   if (led_task_) {
     vTaskDelete(led_task_);
   }
@@ -128,6 +128,9 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
       start_prefetch_timer();
       connection_->read_frame();
       break;
+    case LED_EVENT_NEED_FRAME:
+      // ignore external led clock when we are inactive
+      break;
     default:
       ESP_LOGW(TAG, "Unhandled event id: %d", id);
   }
@@ -165,6 +168,8 @@ void LEDClient::on_got_ip() {
 
 void LEDClient::on_conn_err() {
   connection_.reset();
+  led_clock_.reset();
+  stop_prefetch_timer();
   start_connect_timer();
 }
 
@@ -203,7 +208,6 @@ void LEDClient::handle_prefetch_timer(void* arg) {
   ESP_LOGI(TAG, "Jitter buffer level: %d/%d", level, depth);
   // Start led clock if rcv buffer is full
   if (level == depth) {
-    c->stop_prefetch_timer();
     c->led_clock_.reset(new SquareWaveGenerator<W * 16, PIN_CLOCK_GEN>());
   } else {
     c->start_prefetch_timer();
@@ -294,9 +298,7 @@ void ServerConnection::send_header() {
 }
 
 void ServerConnection::read_frame() {
-  ESP_LOGI(TAG, "Jitter buffer level: %d/%d", bufs_->level(), bufs_->depth());
   assert(bufs_->level() < bufs_->depth());
-  ESP_LOGI(TAG, "Read Starting: %d bytes", bufs_->size());
   asio::async_read(sock_,
                    asio::buffer((void*)bufs_->push_back(), bufs_->size()),
                    [this](const std::error_code& ec, std::size_t bytes) {
@@ -310,16 +312,16 @@ void ServerConnection::read_frame() {
                        post_conn_err();
                      }
                    });
-  ESP_LOGI(TAG, "Read Started: %d bytes", bufs_->size());
 }
 
 void ServerConnection::advance_frame() {
+  ESP_LOGI(TAG, "Jitter buffer level: %d/%d", bufs_->level(), bufs_->depth());
   if (bufs_->level()) {
     frame_.load(bufs_->front());
     bufs_->pop();
     read_frame();
   } else {
-    ESP_LOGW(TAG, "Frame delayed, buffer level: %d", buffer_level());
+    ESP_LOGW(TAG, "Frame delayed!");
     assert(0);
   }
 }
@@ -338,7 +340,8 @@ void ServerConnection::post_conn_active() {
 
 extern "C" void app_main(void) {
   try {
-    led_client.start();
+    led_client.reset(new LEDClient());
+    led_client->start();
   } catch (const std::exception& e) {
     ESP_LOGE(TAG, "%s", e.what());
   }

@@ -4,7 +4,6 @@
 #include <chrono>
 #include <iostream>
 #include <thread>
-#include <unordered_set>
 #include <vector>
 
 #include "Connection.h"
@@ -48,7 +47,7 @@ class LEDServer {
   boost::asio::ip::tcp::acceptor accept_sock_;
   boost::asio::ip::tcp::endpoint accept_ep_;
   std::vector<std::shared_ptr<IOThread>> workers_;
-  std::unordered_set<std::shared_ptr<Connection>> clients_;
+  std::vector<std::shared_ptr<Connection>> clients_;
 };
 
 template <typename T>

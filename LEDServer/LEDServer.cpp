@@ -58,12 +58,6 @@ void LEDServer::stop() {
 
 void LEDServer::post_connection_error(std::shared_ptr<Connection> client) {
   post(main_io_, [this, client]() {
-    if (clients_.erase(client)) {
-      LOG(warning) << "Client " << client->id_str() << " at " << client->key()
-                   << " disconnected";
-    } else {
-      LOG(error) << "Connection not found: " << client->key();
-    }
     clients_.clear();
     frames_in_flight_ = 0;
   });
@@ -72,6 +66,13 @@ void LEDServer::post_connection_error(std::shared_ptr<Connection> client) {
 void LEDServer::post_client_ready(std::shared_ptr<Connection> client) {
   post(main_io_, [this, client]() {
     client->set_ready(true);
+    if (clients_.end() != std::find_if(clients_.begin(), clients_.end(), [&](auto& c) -> bool {
+          return c->id_str() == client->id_str() && c != client;
+        })) {
+        LOG(warning) << "Client " << client->id_str() << " at " << client->key()
+                     << " reconnected";
+      post_connection_error(client);
+    }
     if (std::all_of(clients_.begin(), clients_.end(),
                     [](auto& c) { return c->ready(); })) {
       frames_in_flight_ = 0;
@@ -98,7 +99,7 @@ void LEDServer::accept() {
           socket_base::send_buffer_size option(512000);
           client_sock.set_option(option);
           auto c = std::make_shared<Connection>(*this, client_sock, io);
-          clients_.emplace(std::move(c));
+          clients_.emplace_back(std::move(c));
           accept();
         } else {
           if (ec != std::errc::operation_canceled) {
@@ -123,9 +124,7 @@ void LEDServer::subscribe_signals() {
 }
 
 void LEDServer::send_frame() {
-  LOG(debug) << "send_frame";
   effect_->wait_frame_available();
-  LOG(debug) << "frame_available";
   assert(frames_in_flight_ == 0);
   frames_in_flight_ = clients_.size();
   for (auto& c : clients_) {

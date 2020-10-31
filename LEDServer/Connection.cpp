@@ -21,11 +21,7 @@ Connection::Connection(LEDServer& server, tcp::socket& sock,
   read_header();
 }
 
-Connection::~Connection() {
-  sock_.cancel();
-  //    sock_.shutdown(tcp::socket::shutdown_both);
-  sock_.close();
-}
+Connection::~Connection() { cancel(); }
 
 void Connection::post_cancel() {
   post(io_->ctx_, [this]() { cancel(); });
@@ -34,8 +30,10 @@ void Connection::post_cancel() {
 void Connection::cancel() {
   if (!canceled_) {
     canceled_ = true;
-    LOG(info) << "Connection canceled: " << key();
-    server_.get().post_connection_error(shared_from_this());
+    LOG(info) << "Connection canceled: " << id_str();
+    sock_.cancel();
+    //    sock_.shutdown(tcp::socket::shutdown_both);
+    sock_.close();
   }
 }
 

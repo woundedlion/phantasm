@@ -45,7 +45,7 @@ public:
 		bufs_.swap();
 	}
 
-	void wait_frame_available() { bufs_.wait_not_empty(); }
+	bool wait_frame_available() { return bufs_.wait_not_empty(); }
 	uint64_t frame_count() { return frame_count_; }
 	void cancel() { bufs_.cancel_waits(); }
 

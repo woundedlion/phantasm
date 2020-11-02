@@ -116,7 +116,8 @@ void LEDServer::subscribe_signals() {
     if (!ec) {
       LOG(info) << "Received signal " << signal_number;
       shutdown_ = true;
-      if (effect_) effect_->cancel();
+      auto effect = std::atomic_load(&effect_);
+      if (effect) effect->cancel();
     } else {
       LOG(error) << "Signal listen error: " << ec.message();
     }
@@ -124,15 +125,18 @@ void LEDServer::subscribe_signals() {
 }
 
 void LEDServer::send_frame() {
-  effect_->wait_frame_available();
+  auto effect = std::atomic_load(&effect_);
+  while (!effect->wait_frame_available()) {
+    effect = std::atomic_load(&effect_);
+  }
   assert(frames_in_flight_ == 0);
   frames_in_flight_ = clients_.size();
   for (auto& c : clients_) {
-    LOG(debug) << "Sending frame " << effect_->frame_count() << " to client id "
+    LOG(debug) << "Sending frame " << effect->frame_count() << " to client id "
                << c->id_str();
-    c->post_send(effect_->buf(0), [this]() { this->post_send_frame_complete(); });
+    c->post_send(effect->buf(0), [this]() { this->post_send_frame_complete(); });
   }
-  effect_->advance_frame();
+  effect->advance_frame();
 }
 
 void LEDServer::post_send_frame_complete() {
@@ -143,11 +147,23 @@ void LEDServer::post_send_frame_complete() {
   });
 }
 
+void LEDServer::run(const Sequence& sequence) {
+  while (true) {
+    for (auto& play_effect : sequence) {
+      play_effect();
+      if (is_shutdown()) {
+        return;
+      }
+    }
+  }
+}
+
 int main(int argc, char* argv[]) {
   LEDServer server;
   server.start();
+  Sequence show = {server.play_secs<Test, 15>()};
   while (!server.is_shutdown()) {
-    server.run_effect<Test>(300);
+    server.run(show);
   }
   return 0;
 }

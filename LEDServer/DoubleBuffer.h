@@ -49,12 +49,10 @@ public:
     used_cv_.notify_all();
   }
   
-  void wait_not_empty() {
+  bool wait_not_empty() {
     std::unique_lock<std::mutex> _(used_lock_);
     used_cv_.wait(_, [this]() { return canceled_ || used_ > 0; });
-    if (canceled_) {
-      throw std::runtime_error("wait_not_empty() canceled");
-    }
+    return !canceled_;
   }
   
   void wait_not_full() {

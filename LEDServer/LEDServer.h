@@ -18,6 +18,8 @@ struct IOThread {
   std::thread thread_;
 };
 
+typedef std::vector<std::function<void()>> Sequence;
+
 class LEDServer {
  public:
   LEDServer();
@@ -28,8 +30,9 @@ class LEDServer {
   void post_client_ready(std::shared_ptr<Connection> client);
   bool is_shutdown() { return shutdown_; }
 
-  template <typename T>
-  void run_effect(size_t seconds);
+  void run(const Sequence& sequence);
+  template <typename Effect, size_t secs>
+  std::function<void()> play_secs();
 
  private:
   std::shared_ptr<IOThread> io_schedule();
@@ -39,7 +42,7 @@ class LEDServer {
   void post_send_frame_complete();
 
   int frames_in_flight_;
-  std::unique_ptr<Effect> effect_;
+  std::shared_ptr<Effect> effect_;
   bool shutdown_;
   boost::asio::io_context main_io_;
   boost::asio::signal_set signals_;
@@ -50,16 +53,22 @@ class LEDServer {
   std::vector<std::shared_ptr<Connection>> clients_;
 };
 
-template <typename T>
-void LEDServer::run_effect(size_t seconds) {
-  effect_.reset(new T());
-  auto start = std::chrono::steady_clock::now();
-  auto end = start + std::chrono::seconds(seconds);
-  while (!is_shutdown() && std::chrono::steady_clock::now() < end) {
-    try {
-      effect_->draw_frame();
-    } catch (const std::runtime_error& e) {
-      assert(is_shutdown());
+template <typename EffectDerived, size_t secs>
+std::function<void()> LEDServer::play_secs() {
+  return [this] {
+    auto effect = std::atomic_load(&effect_);
+    if (effect) {
+      effect->cancel();
     }
-  }
+    std::atomic_exchange(&effect_,
+                         std::shared_ptr<Effect>(new EffectDerived()));
+    auto start = std::chrono::steady_clock::now();
+    auto end = start + std::chrono::seconds(secs);
+    while (std::chrono::steady_clock::now() < end) {
+      if (is_shutdown()) {
+        return;
+      }
+      std::atomic_load(&effect_)->draw_frame();
+    }
+  };
 }

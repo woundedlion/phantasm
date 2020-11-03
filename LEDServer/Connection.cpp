@@ -52,12 +52,12 @@ void Connection::read_header() {
 }
 void Connection::post_send(const const_buffer& buf,
                            std::function<void()> callback) {
-  post(io_->ctx_, [=]() { this->send(buf, callback); });
+  post(io_->ctx_, [&, callback]() { this->send(buf, callback); });
 }
 
 void Connection::send(const const_buffer& buf, std::function<void ()> callback) {
   start_ = std::chrono::steady_clock::now();
-  async_write(sock_, buf, [=](const std::error_code& ec, std::size_t bytes) {
+  async_write(sock_, buf, [&, callback](const std::error_code& ec, std::size_t bytes) {
     if (!ec) {
       LOG(info) << bytes << " bytes sent to client ID " << id_str() << " in "
                 << std::dec

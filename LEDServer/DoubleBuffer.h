@@ -55,12 +55,10 @@ public:
     return !canceled_;
   }
   
-  void wait_not_full() {
+  bool wait_not_full() {
     std::unique_lock<std::mutex> _(used_lock_);
     used_cv_.wait(_, [this]() { return canceled_ || used_ < 2; });
-    if (canceled_) {
-      throw std::runtime_error("wait_not_full() canceled");
-    }
+    return !canceled_;
   }
   
   void cancel_waits() {

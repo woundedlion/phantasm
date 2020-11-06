@@ -2,6 +2,7 @@
 
 #include <boost/log/trivial.hpp>
 #include <cassert>
+#include <unordered_map>
 #define LOG(X) BOOST_LOG_TRIVIAL(X)
 
 using namespace boost::asio;
@@ -9,6 +10,7 @@ using namespace boost::asio::ip;
 
 namespace {
 const char* TAG = "LEDServer";
+const std::unordered_map<std::string, int> _slices = {{"24-0a-c4-c0-6b-f0", 0}};
 }
 
 IOThread::IOThread()
@@ -124,6 +126,10 @@ void LEDServer::subscribe_signals() {
   });
 }
 
+int LEDServer::get_slice(const std::string& client_id) {
+  return _slices.at(client_id);
+}
+
 void LEDServer::send_frame() {
   auto effect = std::atomic_load(&effect_);
   while (!effect->wait_frame_available()) {
@@ -134,7 +140,8 @@ void LEDServer::send_frame() {
   for (auto& c : clients_) {
     LOG(debug) << "Sending frame " << effect->frame_count() << " to client id "
                << c->id_str();
-    c->post_send(effect->buf(0), [this]() { this->post_send_frame_complete(); });
+    c->post_send(effect->buf(get_slice(c->id_str())), 
+      [this]() { this->post_send_frame_complete(); });
   }
   effect->advance_frame();
 }

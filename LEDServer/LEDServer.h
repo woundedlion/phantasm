@@ -38,6 +38,7 @@ class LEDServer {
   std::shared_ptr<IOThread> io_schedule();
   void accept();
   void subscribe_signals();
+  int get_slice(const std::string& client_id);
   void send_frame();
   void post_send_frame_complete();
 

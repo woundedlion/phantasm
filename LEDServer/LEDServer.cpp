@@ -10,7 +10,8 @@ using namespace boost::asio::ip;
 
 namespace {
 const char* TAG = "LEDServer";
-const std::unordered_map<std::string, int> _slices = {{"24-0a-c4-c0-6b-f0", 0}};
+const std::unordered_map<std::string, int> _slices = {{"24-0a-c4-c0-6b-f0", 0},
+                                                      {"24-0a-c4-c0-66-b8", 1}};
 }
 
 IOThread::IOThread()

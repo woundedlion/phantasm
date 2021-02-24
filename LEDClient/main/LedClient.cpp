@@ -17,7 +17,7 @@ const char* SERVER_ADDR = "10.10.10.1";
 const int SERVER_PORT = 5050;
 std::unique_ptr<LEDClient> led_client;
 APA102Frame<STRIP_H> frame_;
-//	APA102Frame<STRIP_H> background_;
+APA102Frame<STRIP_H> background_;
 }  // namespace
 
 LEDClient::LEDClient() : state_(STOPPED), x_(0) {
@@ -53,7 +53,7 @@ void LEDClient::start() { wifi_.start(); }
 
 void IRAM_ATTR LEDClient::send_pixels() {
   *spi_ << frame_;
-  //   *spi_ << background_;
+  *spi_ << background_;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////

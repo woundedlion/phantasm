@@ -33,12 +33,12 @@ class APA102Frame {
 public:
 	APA102Frame() {
 		auto w = frame_;
-		std::fill(w, w + S * 4, 0);
+		std::fill(w, w + 4 + S * 4, 0);
 		w += 4 + S * 4;
-		std::fill(w, frame_ + size() / 2, 1);
+		std::fill(w, frame_ + size() / 2, 0x00);
 		w = frame_ + size() / 2;
 		std::copy(frame_, w, w);
-	}
+	}                                                                                                                                                                                                                                              
 
 	APA102Frame& IRAM_ATTR load(const RGB* data) {
 		auto w = frame_ + 4;
@@ -59,6 +59,6 @@ private:
 	uint8_t frame_[ 2 * (
 		4 // start frame
 		+ (S * 4) // LED frames
-		+ ((((S + 1) / 2) + 7) / 8) // end frame
+//		+ ((((S + 1) / 2) + 7) / 8) // end frame
 	)];
 };

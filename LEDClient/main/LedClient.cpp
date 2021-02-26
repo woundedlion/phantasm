@@ -16,7 +16,6 @@ const char* TAG = "LedClient";
 const char* SERVER_ADDR = "10.10.10.1";
 const int SERVER_PORT = 5050;
 std::unique_ptr<LEDClient> led_client;
-APA102Frame<STRIP_H> frame_;
 }  // namespace
 
 LEDClient::LEDClient() : state_(STOPPED), x_(0) {
@@ -51,6 +50,7 @@ LEDClient::~LEDClient() {
 void LEDClient::start() { wifi_.start(); }
 
 void IRAM_ATTR LEDClient::send_pixels() {
+  frame_.load(connection_->get_frame() + (x_ * STRIP_H));
   *spi_ << frame_;
 }
 
@@ -67,7 +67,7 @@ void IRAM_ATTR LEDClient::run_leds(void* arg) {
     c->send_pixels();
     if (++c->x_ == W) {
       c->x_ = 0;
-      esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, portMAX_DELAY);
+//      esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, portMAX_DELAY);
     }
   }
 }
@@ -315,7 +315,6 @@ void ServerConnection::read_frame() {
 void ServerConnection::advance_frame() {
   ESP_LOGI(TAG, "Jitter buffer level: %d/%d", bufs_->level(), bufs_->depth());
   if (bufs_->level()) {
-    frame_.load(bufs_->front());
     bufs_->pop();
     read_frame();
   } else {

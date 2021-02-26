@@ -33,6 +33,7 @@ class ServerConnection {
   void send_header();
   void read_frame();
   void advance_frame();
+  const RGB* get_frame() const { return bufs_->front(); }
 
  private:
   typedef RingBuffer<RGB, W, STRIP_H, JITTER_BUFFER_DEPTH> JitterBuffer;
@@ -85,6 +86,7 @@ class LEDClient : public esp::App {
   std::unique_ptr<ServerConnection> connection_;
   esp_timer_handle_t connect_timer_;
   esp_timer_handle_t prefetch_timer_;
+  APA102Frame<STRIP_H> frame_;
   std::unique_ptr<SPI> spi_;
   volatile uint32_t x_;
   TaskHandle_t led_task_;

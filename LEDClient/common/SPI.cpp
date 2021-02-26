@@ -16,11 +16,11 @@ SPI::SPI() {
 	dev_cfg.command_bits = 0;
 	dev_cfg.address_bits = 0;
 	dev_cfg.dummy_bits = 0;
-	dev_cfg.mode = 0;
+	dev_cfg.mode = 3;
 	dev_cfg.duty_cycle_pos = 128;
 	dev_cfg.cs_ena_pretrans = 0;
 	dev_cfg.cs_ena_posttrans = 0;
-	dev_cfg.clock_speed_hz = 16 * 1000000;
+	dev_cfg.clock_speed_hz = 24 * 1000000;
 	dev_cfg.input_delay_ns = 0;
 	dev_cfg.spics_io_num = -1;
 	dev_cfg.flags = 0;

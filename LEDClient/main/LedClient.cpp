@@ -67,7 +67,7 @@ void IRAM_ATTR LEDClient::run_leds(void* arg) {
     c->send_pixels();
     if (++c->x_ == W) {
       c->x_ = 0;
-//      esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, portMAX_DELAY);
+      esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, portMAX_DELAY);
     }
   }
 }

@@ -65,7 +65,7 @@ public:
 		Canvas<W, H> c(this->bufs_);
 		for (int x = 0; x < W; ++x) {
 			for (int y = 0; y < H; ++y) {
-				if (x % 12 == 0 || y % 12 == 0) {
+				if (x % 12 == 0 && y % 12 == 6) {
 					c[x][y] = RGB(0x00, 0xff, 0x00);
 				} else {
 					c[x][y] = RGB(0x00, 0x00, 0x00);

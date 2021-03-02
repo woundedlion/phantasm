@@ -1,7 +1,8 @@
 #include "SPI.h"
 #include "esp_intr_alloc.h"
 
-SPI::SPI() {
+SPI::SPI()
+{
 	spi_bus_config_t bus_cfg = {};
 	bus_cfg.miso_io_num = -1;
 	bus_cfg.mosi_io_num = 23;
@@ -33,6 +34,6 @@ SPI::SPI() {
 
 SPI::~SPI() {
 	spi_device_release_bus(device_);
-	spi_bus_remove_device(device_);
-	spi_bus_free(VSPI_HOST);
+  spi_bus_remove_device(device_);
+  spi_bus_free(VSPI_HOST);
 }

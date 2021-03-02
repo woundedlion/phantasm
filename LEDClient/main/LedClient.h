@@ -1,66 +1,24 @@
 #pragma once
+
 #include <sstream>
 
 #include "App.h"
 #include "LEDC.h"
 #include "LEDServer/Types.h"
-#include "RingBuffer.h"
+#include "ServerConnection.h"
 #include "SPI.h"
 #include "WifiClient.h"
 
-#include "asio.hpp"
 #include "driver/gpio.h"
-
-const int W = 288;
-const int H = 144;
-const int STRIP_H = 48;
-const int JITTER_BUFFER_DEPTH = 8;
-
-template <typename T>
-std::string to_string(const T& t) {
-  std::stringstream ss;
-  ss << t;
-  return ss.str();
-}
-
-class ServerConnection {
- public:
-  ServerConnection(uint32_t src, uint32_t dst, const std::vector<uint8_t>& id);
-  ~ServerConnection();
-  size_t buffer_level();
-  size_t buffer_depth();
-  void connect();
-  void send_header();
-  void read_frame();
-  void advance_frame();
-
- private:
-  typedef RingBuffer<RGB, W, STRIP_H, JITTER_BUFFER_DEPTH> JitterBuffer;
-
-  static void run_io(void* arg);
-  void post_conn_err();
-  void post_conn_active();
-
-  uint32_t src_;
-  uint32_t dst_;
-  asio::io_context ctx_;
-  TaskHandle_t io_task_;
-  asio::ip::tcp::endpoint local_ep_;
-  asio::ip::tcp::endpoint remote_ep_;
-  asio::ip::tcp::socket sock_;
-  std::vector<uint8_t> id_;
-  std::unique_ptr<JitterBuffer> bufs_;
-};
 
 ESP_EVENT_DECLARE_BASE(LED_EVENT);
 
 enum {
   LED_EVENT_CONN_ERR = 10000,
-  LED_EVENT_NEED_FRAME = 10001,
-  LED_EVENT_CONN_ACTIVE = 10002,
-  LED_EVENT_START_TIMER = 10003,
-  LED_EVENT_STOP_TIMER = 10004,
-  LED_EVENT_SHOW = 10005,
+  LED_EVENT_CONN_ACTIVE = 10001,
+  LED_EVENT_PREFETCH_TIMER = 10002,
+  LED_EVENT_NEED_FRAME = 10003,
+  LED_EVENT_READ_COMPLETE = 10004,
 };
 
 class LEDClient : public esp::App {
@@ -71,9 +29,11 @@ class LEDClient : public esp::App {
   void send_pixels();
 
  private:
+
   enum State {
     STOPPED,
     READY,
+    PREFETCH,
     ACTIVE,
   };
 
@@ -85,12 +45,16 @@ class LEDClient : public esp::App {
   std::unique_ptr<ServerConnection> connection_;
   esp_timer_handle_t connect_timer_;
   esp_timer_handle_t prefetch_timer_;
+  APA102Frame<STRIP_H> frame_[W];
   std::unique_ptr<SPI> spi_;
   volatile uint32_t x_;
   TaskHandle_t led_task_;
   std::unique_ptr<SquareWaveGenerator<W * 16, PIN_CLOCK_GEN>> led_clock_;
+  std::unique_ptr<JitterBuffer> bufs_;
+  bool read_pending_;
 
   static void run_leds(void* arg);
+  static void on_clock_isr(void* arg);
 
   static void dump_event(void* arg, esp_event_base_t base, int32_t id,
                          void* data);
@@ -98,6 +62,7 @@ class LEDClient : public esp::App {
                            void* data);
   void state_stopped(esp_event_base_t base, int32_t id, void* data);
   void state_ready(esp_event_base_t base, int32_t id, void* data);
+  void state_prefetch(esp_event_base_t base, int32_t id, void* data);
   void state_active(esp_event_base_t base, int32_t id, void* data);
 
   void start_connect_timer();
@@ -110,7 +75,7 @@ class LEDClient : public esp::App {
 
   void on_got_ip();
   void on_conn_err();
-  void read();
+  void advance_frame();
 
   void start_gpio();
   void stop_gpio();

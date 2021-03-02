@@ -1,7 +1,8 @@
 #include "SPI.h"
 #include "esp_intr_alloc.h"
 
-SPI::SPI() {
+SPI::SPI()
+{
 	spi_bus_config_t bus_cfg = {};
 	bus_cfg.miso_io_num = -1;
 	bus_cfg.mosi_io_num = 23;
@@ -16,11 +17,11 @@ SPI::SPI() {
 	dev_cfg.command_bits = 0;
 	dev_cfg.address_bits = 0;
 	dev_cfg.dummy_bits = 0;
-	dev_cfg.mode = 0;
+	dev_cfg.mode = 3;
 	dev_cfg.duty_cycle_pos = 128;
 	dev_cfg.cs_ena_pretrans = 0;
 	dev_cfg.cs_ena_posttrans = 0;
-	dev_cfg.clock_speed_hz = 16 * 1000000;
+	dev_cfg.clock_speed_hz = 24 * 1000000;
 	dev_cfg.input_delay_ns = 0;
 	dev_cfg.spics_io_num = -1;
 	dev_cfg.flags = 0;
@@ -33,6 +34,6 @@ SPI::SPI() {
 
 SPI::~SPI() {
 	spi_device_release_bus(device_);
-	spi_bus_remove_device(device_);
-	spi_bus_free(VSPI_HOST);
+  spi_bus_remove_device(device_);
+  spi_bus_free(VSPI_HOST);
 }

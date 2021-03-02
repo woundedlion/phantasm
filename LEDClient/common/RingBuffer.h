@@ -1,38 +1,54 @@
 #pragma once
 
-template <typename T, int W, int H, int D>
+#include <mutex>
+#include "Mutex.h"
+
+template <typename T, int D>
 class RingBuffer {
  public:
-  RingBuffer() : 
-  r_(0),
-  w_(0),
-  level_(0) 
-  {}
-  size_t level() const { return level_; }
+  RingBuffer() : r_(0), w_(0), level_(0) {}
+
+  constexpr size_t datum_size() const { return sizeof(T); }
   constexpr size_t depth() { return D; }
-  constexpr size_t size() { return W * H * sizeof(T); }
-  const T *front() const { return bufs_[r_]; }
-  T *push_back() {
+
+  size_t level() const {
+    std::lock_guard<Mutex> _(lock_);
+    return level_;
+  }
+
+  const T& front() const {
+    std::lock_guard<Mutex> _(lock_);
+    return bufs_[r_];
+  }
+
+  T* next() {
+    std::lock_guard<Mutex> _(lock_);
+    return &bufs_[(w_ + 1) % D];
+  }
+
+  void push() {
+    std::lock_guard<Mutex> _(lock_);
     if (level_ && w_ == r_) {
       assert(0);
     }
-    int w = w_;
     level_++;
-    w_ = (w + 1) % D;
-    return bufs_[w];
+    w_ = (w_ + 1) % D;
   }
-  void pop() { 
+
+  void pop() {
+    std::lock_guard<Mutex> _(lock_);
     if (!level_) {
       assert(r_ == w_);
       throw std::runtime_error("buffer underrun!");
     }
-    r_ = (r_ + 1) % D; 
+    r_ = (r_ + 1) % D;
     level_--;
   }
 
  private:
-  T bufs_[D][W * H];
+  T bufs_[D];
   int r_;
   int w_;
   size_t level_;
+  mutable Mutex lock_;
 };

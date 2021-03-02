@@ -68,7 +68,7 @@ public:
 				if (x % 12 == 0 && y % 12 == 6) {
 					c[x][y] = RGB(0x00, 0xff, 0x00);
 				} else {
-					c[x][y] = RGB(0x00, 0x00, 0x00);
+					c[x][y] = RGB(0xff, 0x00, 0x00);
 				}
 			}
 		}

@@ -39,6 +39,7 @@ WifiClient::~WifiClient() {
 }
 
 void WifiClient::start() {
+  ESP_LOGI(TAG, "CORE %d", xPortGetCoreID());
   ERR_THROW(nvs_flash_init());
   ERR_THROW(esp_netif_init());
   netif_ = esp_netif_create_default_wifi_sta();
@@ -52,7 +53,7 @@ void WifiClient::start() {
   auto wifi_cfg = wifi_config_t();
   strcpy(reinterpret_cast<char*>(wifi_cfg.sta.ssid), "phantasm");
   strcpy(reinterpret_cast<char*>(wifi_cfg.sta.password), "phantasm");
-  ERR_THROW(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_cfg));
+  ERR_THROW(esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg));
 
   ERR_THROW(esp_wifi_start());
 }
@@ -64,7 +65,7 @@ void WifiClient::handle_csi(void* ctx, wifi_csi_info_t* data) {
 
 std::vector<uint8_t> WifiClient::mac_address() {
   uint8_t mac[6];
-  ERR_THROW(esp_wifi_get_mac(ESP_IF_WIFI_STA, mac));
+  ERR_THROW(esp_wifi_get_mac(WIFI_IF_STA, mac));
   ESP_LOGI(TAG, "MAC: %02x-%02x-%02x-%02x-%02x-%02x", mac[0], mac[1], mac[2],
            mac[3], mac[4], mac[5]);
   return std::vector<uint8_t>(mac, mac + sizeof(mac));
@@ -178,8 +179,8 @@ void WifiClient::connect() {
 }
 
 void WifiClient::connect_timer_start() {
-  ESP_LOGI(TAG, "Reconnecting to Wifi in 5 seconds...");
-  ERR_THROW(esp_timer_start_once(connect_timer_, 5000000));
+  ESP_LOGI(TAG, "Reconnecting to Wifi in 1 second...");
+  ERR_THROW(esp_timer_start_once(connect_timer_, 1000000));
 }
 
 void WifiClient::handle_connect_timer(void* arg) {

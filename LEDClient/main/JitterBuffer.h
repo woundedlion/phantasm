@@ -4,7 +4,7 @@
 #include "LEDServer/Types.h"
 
 
-const int JITTER_BUFFER_DEPTH = 8;
+const int JITTER_BUFFER_DEPTH = 24;
 const int W = 288;
 const int H = 144;
 const int STRIP_H = 48;

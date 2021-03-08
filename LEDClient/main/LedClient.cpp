@@ -68,6 +68,15 @@ void IRAM_ATTR LEDClient::run_leds(void* arg) {
   c->start_gpio();
   ets_isr_mask(1ULL << XT_TIMER_INTNUM);
   while (true) {
+    /*
+    while (0 == (REG_READ(GPIO_IN_REG) & 1 << PIN_CLOCK_READ)) {
+    }
+    c->send_pixels();
+    if (++c->x_ == W) {
+      c->x_ = 0;
+      esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, 0);
+    }
+    */
   }
 }
 
@@ -76,7 +85,11 @@ void IRAM_ATTR LEDClient::on_clock_isr(void* arg) {
   c->send_pixels();
   if (++c->x_ == W) {
     c->x_ = 0;
-    esp_event_isr_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, NULL); 
+    int yield = 0;
+    esp_event_isr_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, &yield);
+    if (yield) {
+      portYIELD_FROM_ISR();
+    }
   }
 }
 
@@ -289,6 +302,7 @@ void LEDClient::start_gpio() {
     cfg.pull_up_en = GPIO_PULLUP_DISABLE;
     cfg.pull_down_en = GPIO_PULLDOWN_ENABLE;
     cfg.intr_type = GPIO_INTR_POSEDGE;
+//    cfg.intr_type = GPIO_INTR_DISABLE;
     ERR_THROW(gpio_config(&cfg));
     gpio_install_isr_service(ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL3);
     gpio_isr_handler_add(PIN_CLOCK_READ, on_clock_isr, this);

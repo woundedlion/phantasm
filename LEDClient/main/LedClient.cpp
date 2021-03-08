@@ -180,9 +180,7 @@ void LEDClient::state_prefetch(esp_event_base_t base, int32_t id, void* data) {
       if (bufs_->level() == bufs_->depth()) {
         ESP_LOGI(TAG, "State transition: %s -> %s on %d", "PREFETCH", "ACTIVE", id);
         state_ = ACTIVE;
-        for (int i = 0; i < W; ++i) {
-          frame_[i].load(bufs_->front() + i * STRIP_H);
-        }
+        advance_frame();
         led_clock_.reset(new SquareWaveGenerator<W * 16, PIN_CLOCK_GEN>());
       } else {
         start_prefetch_timer();
@@ -287,18 +285,23 @@ void LEDClient::advance_frame() {
     }
     ESP_LOGD(TAG, "Frame advanced -> jitter buffer level: %d/%d",
              bufs_->level(), bufs_->depth());
-    int fastforward = bufs_->pop(1 + dropped_frames_) - 1;
-    if (fastforward) {
-      dropped_frames_ -= fastforward;
+
+    // Catch up if we have extra frames available
+    int ffwd = bufs_->ffwd(dropped_frames_);
+    if (ffwd) {
+      dropped_frames_ -= ffwd;
       ESP_LOGW(TAG, "Caught up by %d frames -> jitter buffer level: %d/%d",
-               fastforward, bufs_->level(), bufs_->depth());
+               ffwd, bufs_->level(), bufs_->depth());
     }
+    // load and pop front frame
+    for (int i = 0; i < W; ++i) {
+      frame_[i].load(bufs_->front() + i * STRIP_H);
+    }
+    bufs_->pop();
+    // Backfill popped frames
     if (!read_pending_) {
       read_pending_ = true;
       connection_->read_frame(*bufs_);
-    }
-    for (int i = 0; i < W; ++i) {
-      frame_[i].load(bufs_->front() + i * STRIP_H);
     }
   }
   else {

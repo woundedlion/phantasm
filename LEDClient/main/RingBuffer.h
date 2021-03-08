@@ -35,14 +35,16 @@ class RingBuffer {
     w_ = (w_ + 1) % D;
   }
 
-  void pop() {
+  int pop(uint32_t n) {
     std::lock_guard<Mutex> _(lock_);
     if (!level_) {
       assert(r_ == w_);
       throw std::runtime_error("buffer underrun!");
     }
-    r_ = (r_ + 1) % D;
-    level_--;
+    int popped = std::min(n, level_);
+    r_ = (r_ + popped) % D;
+    level_ -= popped;
+    return popped;
   }
 
  private:

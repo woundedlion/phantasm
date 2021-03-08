@@ -23,7 +23,8 @@ LEDClient::LEDClient() :
   state_(STOPPED), 
   x_(0),
   bufs_(new JitterBuffer()), 
-  read_pending_(false)
+  read_pending_(false),
+  dropped_frames_(0) 
 {
   assert(bufs_);
   esp_timer_create_args_t args;
@@ -145,7 +146,7 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
       on_conn_err();
       break;
     case LED_EVENT_CONN_ACTIVE:
-      ESP_LOGI(TAG, "State transition: %s -> %s on %d", "READY", "ACTIVE", id);
+      ESP_LOGI(TAG, "State transition: %s -> %s on %d", "READY", "PREFETCH", id);
       state_ = PREFETCH;
       xTaskCreatePinnedToCore(LEDClient::run_leds, "LED_LOOP", 2048, this,
                               configMAX_PRIORITIES - 1, &led_task_, 1);
@@ -191,12 +192,12 @@ void LEDClient::state_prefetch(esp_event_base_t base, int32_t id, void* data) {
       // ignore clock before we are active
       break;
     case LED_EVENT_READ_COMPLETE:
-      read_pending_ = false;
-      if (bufs_->level() < bufs_->depth()) {
-        read_pending_ = true;
-        connection_->read_frame(*bufs_);
-      }
-      break;
+read_pending_ = false;
+if (bufs_->level() < bufs_->depth()) {
+  read_pending_ = true;
+  connection_->read_frame(*bufs_);
+}
+break;
     default:
       ESP_LOGW(TAG, "Unhandled event id: %d", id);
   }
@@ -204,28 +205,28 @@ void LEDClient::state_prefetch(esp_event_base_t base, int32_t id, void* data) {
 
 void LEDClient::state_active(esp_event_base_t base, int32_t id, void* data) {
   switch (id) {
-    case IP_EVENT_STA_GOT_IP:
-      ESP_LOGI(TAG, "State transition: %s -> %s on %d", "ACTIVE", "READY", id);
-      state_ = READY;
-      on_got_ip();
-      break;
-    case LED_EVENT_CONN_ERR:
-      ESP_LOGI(TAG, "State transition: %s -> %s on %d", "ACTIVE", "READY", id);
-      state_ = READY;
-      on_conn_err();
-      break;
-    case LED_EVENT_NEED_FRAME:
-      advance_frame();
-      break;
-    case LED_EVENT_READ_COMPLETE:
-      read_pending_ = false;
-      if (bufs_->level() < bufs_->depth()) {
-        read_pending_ = true;
-        connection_->read_frame(*bufs_);
-      }
-      break;
-    default:
-      ESP_LOGW(TAG, "Unhandled event id: %d", id);
+  case IP_EVENT_STA_GOT_IP:
+    ESP_LOGI(TAG, "State transition: %s -> %s on %d", "ACTIVE", "READY", id);
+    state_ = READY;
+    on_got_ip();
+    break;
+  case LED_EVENT_CONN_ERR:
+    ESP_LOGI(TAG, "State transition: %s -> %s on %d", "ACTIVE", "READY", id);
+    state_ = READY;
+    on_conn_err();
+    break;
+  case LED_EVENT_NEED_FRAME:
+    advance_frame();
+    break;
+  case LED_EVENT_READ_COMPLETE:
+    read_pending_ = false;
+    if (bufs_->level() < bufs_->depth()) {
+      read_pending_ = true;
+      connection_->read_frame(*bufs_);
+    }
+    break;
+  default:
+    ESP_LOGW(TAG, "Unhandled event id: %d", id);
   }
 }
 
@@ -233,8 +234,9 @@ void LEDClient::on_got_ip() {
   try {
     ESP_LOGI(TAG, "Resetting client connection on IP change");
     connection_.reset(new ServerConnection(
-        ntohl(wifi_.ip()), ntohl(inet_addr(SERVER_ADDR)), SERVER_PORT, wifi_.mac_address()));
-  } catch (std::exception& e) {
+      ntohl(wifi_.ip()), ntohl(inet_addr(SERVER_ADDR)), SERVER_PORT, wifi_.mac_address()));
+  }
+  catch (std::exception& e) {
     ESP_LOGE(TAG, "%s", e.what());
   }
 }
@@ -257,9 +259,9 @@ void LEDClient::stop_connect_timer() {
 void LEDClient::handle_connect_timer(void* arg) {
   auto c = static_cast<LEDClient*>(arg);
   c->connection_.reset(new ServerConnection(ntohl(c->wifi_.ip()),
-                                            ntohl(inet_addr(SERVER_ADDR)),
-                                            SERVER_PORT,
-                                            c->wifi_.mac_address()));
+    ntohl(inet_addr(SERVER_ADDR)),
+    SERVER_PORT,
+    c->wifi_.mac_address()));
 }
 
 void LEDClient::start_prefetch_timer() {
@@ -279,18 +281,32 @@ void LEDClient::handle_prefetch_timer(void* arg) {
 void LEDClient::advance_frame() {
   assert(connection_);
   if (bufs_->level()) {
-    bufs_->pop();
-    ESP_LOGI(TAG, "Frame advanced -> jitter buffer level: %d/%d", bufs_->level(), bufs_->depth());
+    if (bufs_->level() < bufs_->depth()) {
+      ESP_LOGW(TAG, "jitter buffer level: %d/%d",
+               bufs_->level(), bufs_->depth());    
+    }
+    ESP_LOGD(TAG, "Frame advanced -> jitter buffer level: %d/%d",
+             bufs_->level(), bufs_->depth());
+    int fastforward = bufs_->pop(1 + dropped_frames_) - 1;
+    if (fastforward) {
+      dropped_frames_ -= fastforward;
+      ESP_LOGW(TAG, "Caught up by %d frames -> jitter buffer level: %d/%d",
+               fastforward, bufs_->level(), bufs_->depth());
+    }
     if (!read_pending_) {
       read_pending_ = true;
       connection_->read_frame(*bufs_);
     }
     for (int i = 0; i < W; ++i) {
-      frame_[i].load(bufs_->front() + i * STRIP_H);    
+      frame_[i].load(bufs_->front() + i * STRIP_H);
     }
-  } else {
-    ESP_LOGW(TAG, "Frame delayed!");
-    assert(0);
+  }
+  else {
+    dropped_frames_++;
+    ESP_LOGE(TAG, "Frame dropped (%d)", dropped_frames_);
+    if (dropped_frames_ > 16 * 10) {
+        assert(0);
+    }
   }
 }
 

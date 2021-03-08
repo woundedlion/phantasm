@@ -45,12 +45,11 @@ class APA102Frame {
   ~APA102Frame() { heap_caps_free(frame_); }
 
   APA102Frame& IRAM_ATTR load(const RGB* data) {
-    auto w = *frame_ + 4;
+    auto w = *frame_ + 4 + 1;
     for (auto p = data; p < data + S; ++p) {
-      *w++ = 0xff;  // 0xe0 + 5 bits brightness
       std::copy(reinterpret_cast<const uint8_t*>(p),
-                reinterpret_cast<const uint8_t*>(p + 3), w);
-      w += 3;
+                reinterpret_cast<const uint8_t*>(p) + 3, w);
+      w += 4;
     }
     return *this;
   }

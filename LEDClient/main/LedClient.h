@@ -52,6 +52,7 @@ class LEDClient : public esp::App {
   std::unique_ptr<SquareWaveGenerator<W * 16, PIN_CLOCK_GEN>> led_clock_;
   std::unique_ptr<JitterBuffer> bufs_;
   bool read_pending_;
+  uint32_t dropped_frames_;
 
   static void run_leds(void* arg);
   static void on_clock_isr(void* arg);

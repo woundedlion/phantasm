@@ -73,15 +73,15 @@ void ServerConnection::send_header() {
 void ServerConnection::read_frame(JitterBuffer& bufs) {
   assert(bufs.level() < bufs.depth());
   auto op_id = op_id_++;
-  ESP_LOGI(TAG, "Read %d started - Jitter buffer level: %d/%d", op_id, bufs.level(), bufs.depth());
+  ESP_LOGD(TAG, "Read %d started - Jitter buffer level: %d/%d", op_id, bufs.level(), bufs.depth());
   asio::async_read(
       sock_, asio::buffer((void*)bufs.next(), bufs.datum_size()),
       [&, this, op_id](const std::error_code& ec, std::size_t bytes) {
         if (!ec && bytes) {
-          ESP_LOGI(TAG, "Read %d complete: %d bytes",
+          ESP_LOGD(TAG, "Read %d complete: %d bytes",
                    op_id, bytes);
           bufs.push();
-          ESP_LOGI(TAG, "Push %d - Jitter buffer level: %d/%d",
+          ESP_LOGD(TAG, "Push %d - Jitter buffer level: %d/%d",
                    op_id, bufs.level(), bufs.depth());
           ERR_THROW(
               esp_event_post(LED_EVENT, LED_EVENT_READ_COMPLETE, NULL, 0, 0));

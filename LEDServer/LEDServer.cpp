@@ -169,7 +169,10 @@ void LEDServer::run(const Sequence& sequence) {
 int main(int argc, char* argv[]) {
   LEDServer server;
   server.start();
-  Sequence show = {server.play_secs<Test, 15>()};
+  Sequence show = {
+    server.play_secs<Test, 5>(),
+    server.play_secs<Test2, 5>(),
+  };
   while (!server.is_shutdown()) {
     server.run(show);
   }

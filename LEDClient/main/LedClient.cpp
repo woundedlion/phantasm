@@ -43,6 +43,9 @@ LEDClient::LEDClient() :
                                        LEDClient::handle_event, this));
   ERR_THROW(esp_event_handler_register(LED_EVENT, ESP_EVENT_ANY_ID,
                                        LEDClient::handle_event, this));
+
+  xTaskCreatePinnedToCore(run_io, "IO_LOOP", 4096, this, 17,
+                          &io_task_, 0);
 }
 
 LEDClient::~LEDClient() {
@@ -52,6 +55,9 @@ LEDClient::~LEDClient() {
   ERR_LOG("esp_timer_delete", esp_timer_delete(prefetch_timer_));
   if (led_task_) {
     vTaskDelete(led_task_);
+  }
+  if (io_task_) {
+    vTaskDelete(io_task_);
   }
 }
 
@@ -63,22 +69,18 @@ void IRAM_ATTR LEDClient::send_pixels() {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+void LEDClient::run_io(void* arg) {
+  auto c = reinterpret_cast<LEDClient*>(arg);
+  auto work = asio::make_work_guard(c->ctx_);
+  c->ctx_.run();
+}
+
 void IRAM_ATTR LEDClient::run_leds(void* arg) {
   auto c = reinterpret_cast<LEDClient*>(arg);
   c->spi_.reset(new SPI());
   c->start_gpio();
   ets_isr_mask(1ULL << XT_TIMER_INTNUM);
-  while (true) {
-    /*
-    while (0 == (REG_READ(GPIO_IN_REG) & 1 << PIN_CLOCK_READ)) {
-    }
-    c->send_pixels();
-    if (++c->x_ == W) {
-      c->x_ = 0;
-      esp_event_post(LED_EVENT, LED_EVENT_NEED_FRAME, NULL, 0, 0);
-    }
-    */
-  }
+  while (true) {}
 }
 
 void IRAM_ATTR LEDClient::on_clock_isr(void* arg) {
@@ -232,7 +234,11 @@ void LEDClient::on_got_ip() {
   try {
     ESP_LOGI(TAG, "Resetting client connection on IP change");
     connection_.reset(new ServerConnection(
-      ntohl(wifi_.ip()), ntohl(inet_addr(SERVER_ADDR)), SERVER_PORT, wifi_.mac_address()));
+      ctx_,
+      ntohl(wifi_.ip()), 
+      ntohl(inet_addr(SERVER_ADDR)), 
+      SERVER_PORT, 
+      wifi_.mac_address()));
   }
   catch (std::exception& e) {
     ESP_LOGE(TAG, "%s", e.what());
@@ -256,7 +262,9 @@ void LEDClient::stop_connect_timer() {
 
 void LEDClient::handle_connect_timer(void* arg) {
   auto c = static_cast<LEDClient*>(arg);
-  c->connection_.reset(new ServerConnection(ntohl(c->wifi_.ip()),
+  c->connection_.reset(new ServerConnection(
+    c->ctx_, 
+    ntohl(c->wifi_.ip()),
     ntohl(inet_addr(SERVER_ADDR)),
     SERVER_PORT,
     c->wifi_.mac_address()));

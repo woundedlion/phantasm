@@ -6,35 +6,25 @@ namespace {
 const char* TAG = "ServerConnection";
 }
 
-ServerConnection::ServerConnection(uint32_t src, uint32_t dst,
+ServerConnection::ServerConnection(asio::io_context& ctx,
+                                   uint32_t src, uint32_t dst,
                                    uint16_t dst_port,
                                    const std::vector<uint8_t>& mac)
-    : src_(src),
+    : ctx_(ctx),
+      src_(src),
       dst_(dst),
       local_ep_(asio::ip::address_v4(src_), 0),
       remote_ep_(asio::ip::address_v4(dst_), dst_port),
       sock_(ctx_, local_ep_),
       id_(mac),
       read_pending_(false),
-      op_id_(0)
-{
+      op_id_(0) {
   connect();
-  xTaskCreatePinnedToCore(ServerConnection::run_io, "IO_LOOP", 4096, this, 17,
-                          &io_task_, 0);
 }
 
 ServerConnection::~ServerConnection() {
-  asio::post(ctx_, [this]() {
-    sock_.cancel();
-    sock_.close();
-  });
-  vTaskDelete(io_task_);
-}
-
-void ServerConnection::run_io(void* arg) {
-  auto c = reinterpret_cast<ServerConnection*>(arg);
-  auto work = asio::make_work_guard(c->ctx_);
-  c->ctx_.run();
+  sock_.cancel();
+  sock_.close();
 }
 
 void ServerConnection::connect() {
@@ -73,16 +63,16 @@ void ServerConnection::send_header() {
 void ServerConnection::read_frame(JitterBuffer& bufs) {
   assert(bufs.level() < bufs.depth());
   auto op_id = op_id_++;
-  ESP_LOGD(TAG, "Read %d started - Jitter buffer level: %d/%d", op_id, bufs.level(), bufs.depth());
+  ESP_LOGD(TAG, "Read %d started - Jitter buffer level: %d/%d", op_id,
+           bufs.level(), bufs.depth());
   asio::async_read(
       sock_, asio::buffer((void*)bufs.next(), bufs.datum_size()),
       [&, this, op_id](const std::error_code& ec, std::size_t bytes) {
         if (!ec && bytes) {
-          ESP_LOGD(TAG, "Read %d complete: %d bytes",
-                   op_id, bytes);
+          ESP_LOGD(TAG, "Read %d complete: %d bytes", op_id, bytes);
           bufs.push();
-          ESP_LOGD(TAG, "Push %d - Jitter buffer level: %d/%d",
-                   op_id, bufs.level(), bufs.depth());
+          ESP_LOGD(TAG, "Push %d - Jitter buffer level: %d/%d", op_id,
+                   bufs.level(), bufs.depth());
           ERR_THROW(
               esp_event_post(LED_EVENT, LED_EVENT_READ_COMPLETE, NULL, 0, 0));
         } else if (ec != std::errc::operation_canceled) {

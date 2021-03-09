@@ -1,5 +1,7 @@
 #pragma once
 
+#include "freertos/freertos.h"
+
 class Mutex {
  public:
   Mutex() : lock_(portMUX_INITIALIZER_UNLOCKED) {}

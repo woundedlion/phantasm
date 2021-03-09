@@ -49,11 +49,14 @@ class LEDClient : public esp::App {
   std::unique_ptr<SPI> spi_;
   volatile uint32_t x_;
   TaskHandle_t led_task_;
+  asio::io_context ctx_;
+  TaskHandle_t io_task_;
   std::unique_ptr<SquareWaveGenerator<W * 16, PIN_CLOCK_GEN>> led_clock_;
   std::unique_ptr<JitterBuffer> bufs_;
   bool read_pending_;
   uint32_t dropped_frames_;
 
+  static void run_io(void* arg);
   static void run_leds(void* arg);
   static void on_clock_isr(void* arg);
 

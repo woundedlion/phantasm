@@ -1,7 +1,7 @@
 #pragma once
 
 #include "App.h"
-#include "LEDServer/Types.h"
+#include "Types.h"
 #include "driver/spi_master.h"
 #include "esp_heap_caps.h"
 

@@ -1,7 +1,7 @@
 #pragma once
 #include "RingBuffer.h"
 #include "SPI.h"
-#include "LEDServer/Types.h"
+#include "Types.h"
 
 
 const int JITTER_BUFFER_DEPTH = 24;

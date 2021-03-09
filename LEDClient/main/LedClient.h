@@ -4,7 +4,7 @@
 
 #include "App.h"
 #include "LEDC.h"
-#include "LEDServer/Types.h"
+#include "Types.h"
 #include "ServerConnection.h"
 #include "SPI.h"
 #include "WifiClient.h"

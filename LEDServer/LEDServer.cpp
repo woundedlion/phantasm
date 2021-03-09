@@ -133,7 +133,7 @@ int LEDServer::get_slice(const std::string& client_id) {
 
 void LEDServer::send_frame() {
   auto effect = std::atomic_load(&effect_);
-  while (!effect->wait_frame_available()) {
+  while (!shutdown_ && !effect->wait_frame_available()) {
     effect = std::atomic_load(&effect_);
   }
   assert(frames_in_flight_ == 0);

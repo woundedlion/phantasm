@@ -26,6 +26,7 @@ class LEDServer {
   ~LEDServer();
   void start();
   void stop();
+  void post_drop_client(std::shared_ptr<Connection> client);
   void post_connection_error(std::shared_ptr<Connection> client);
   void post_client_ready(std::shared_ptr<Connection> client);
   bool is_shutdown() { return shutdown_; }
@@ -41,6 +42,7 @@ class LEDServer {
   int get_slice(const std::string& client_id);
   void send_frame();
   void post_send_frame_complete();
+  bool all_clients_ready();
 
   int frames_in_flight_;
   std::shared_ptr<Effect> effect_;
@@ -52,6 +54,7 @@ class LEDServer {
   boost::asio::ip::tcp::endpoint accept_ep_;
   std::vector<std::shared_ptr<IOThread>> workers_;
   std::vector<std::shared_ptr<Connection>> clients_;
+  static const std::unordered_map<std::string, int> slices_;
 };
 
 template <typename EffectDerived, size_t secs>

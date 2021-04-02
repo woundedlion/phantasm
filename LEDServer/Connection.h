@@ -4,6 +4,8 @@
 #include <memory>
 #include <boost/asio.hpp>
 #include <functional>
+#include "DoubleBuffer.h"
+#include "Types.h"
 
 class LEDServer;
 class IOThread;
@@ -39,10 +41,10 @@ private:
 
   std::reference_wrapper<LEDServer> server_;
   boost::asio::ip::tcp::socket sock_;
+  uint8_t buf_[W * H * sizeof(RGB)];
   std::shared_ptr<IOThread> io_;
   id_t id_;
   key_t key_;
-  std::chrono::steady_clock::time_point start_;
   std::chrono::steady_clock::time_point last_ready_;
   bool ready_;
   bool canceled_;

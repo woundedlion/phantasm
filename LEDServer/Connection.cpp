@@ -31,8 +31,8 @@ void Connection::cancel() {
   if (!canceled_) {
     canceled_ = true;
     LOG(info) << "Connection canceled: " << id_str();
+    sock_.shutdown(tcp::socket::shutdown_both);
     sock_.cancel();
-    //    sock_.shutdown(tcp::socket::shutdown_both);
     sock_.close();
   }
 }
@@ -52,25 +52,21 @@ void Connection::read_header() {
 }
 void Connection::post_send(const const_buffer& buf,
                            std::function<void()> callback) {
-  post(io_->ctx_, [&, callback]() { this->send(buf, callback); });
+  std::copy(buf.data(), buf.data() + buf.size(), buf_);
+  post(io_->ctx_, [&, callback]() { this->send(buf_, callback); });
 }
 
-void Connection::send(const const_buffer& buf, std::function<void ()> callback) {
-  start_ = std::chrono::steady_clock::now();
-  async_write(sock_, buf, [&, callback](const std::error_code& ec, std::size_t bytes) {
-    if (!ec) {
-      LOG(info) << bytes << " bytes sent to client ID " << id_str() << " in "
-                << std::dec
-                << std::chrono::duration_cast<std::chrono::milliseconds>(
-                       std::chrono::steady_clock::now() - start_)
-                       .count()
-                << "ms";
-      callback();
-    } else if (ec != std::errc::operation_canceled) {
-      LOG(error) << "Write Error: " << ec.message();
-      cancel();
-    }
-  });
+void Connection::send(std::function<void()> callback) {
+  async_write(sock_, boost::asio::const_buffer(buf_, sizeof(buf_)),
+              [&, callback](const std::error_code& ec, std::size_t bytes) {
+                if (!ec) {
+                  LOG(info) << bytes << " bytes sent to client ID " << id_str();
+                  callback();
+                } else if (ec != std::errc::operation_canceled) {
+                  LOG(error) << "Write Error: " << ec.message();
+                  cancel();
+                }
+              });
 }
 
 std::string Connection::id_str() const {

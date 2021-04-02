@@ -65,16 +65,42 @@ class Test : public Effect {
 
 #include "ColorSpace.h"
 
-class Test2 : public Effect {
+class RainbowHSV : public Effect {
  public:
-  Test2() {}
-
   void draw_frame() {
     Canvas<W, H> _(this->bufs_);
     for (int x = 0; x < W; ++x) {
       for (int y = 0; y < H; ++y) {
         ColorSpace::Rgb rgb;
         ColorSpace::Hsv((y % STRIP_H) * 360 / STRIP_H, 1, 1).ToRgb(&rgb);
+        _[x][y] = rgb;
+      }
+    }
+  }
+};
+
+class RainbowTwistHSV : public Effect {
+ public:
+  void draw_frame() {
+    Canvas<W, H> _(this->bufs_);
+    for (int x = 0; x < W; ++x) {
+      for (int y = 0; y < H; ++y) {
+        ColorSpace::Rgb rgb;
+        ColorSpace::Hsv(((x + y) % STRIP_H) * 360 / STRIP_H, 1, 1).ToRgb(&rgb);
+        _[x][y] = rgb;
+      }
+    }
+  }
+};
+
+class RainbowHSL : public Effect {
+ public:
+  void draw_frame() {
+    Canvas<W, H> _(this->bufs_);
+    for (int x = 0; x < W; ++x) {
+      for (int y = 0; y < H; ++y) {
+        ColorSpace::Rgb rgb;
+        ColorSpace::Hsl((y % STRIP_H) * 360 / STRIP_H, 100, 50).ToRgb(&rgb);
         _[x][y] = rgb;
       }
     }

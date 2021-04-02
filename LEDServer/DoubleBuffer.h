@@ -13,7 +13,7 @@ public:
   
     DoubleBuffer() :
     front_(0),
-    used_(2),
+    used_(0),
     canceled_(false)
   {}
   

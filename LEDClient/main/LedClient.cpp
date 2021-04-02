@@ -22,7 +22,8 @@ std::unique_ptr<LEDClient> led_client;
 LEDClient::LEDClient() : 
   state_(STOPPED), 
   x_(0),
-  bufs_(new JitterBuffer()), 
+  led_clock_(new SquareWaveGenerator<W * 16, PIN_CLOCK_GEN>()),
+  bufs_(new JitterBuffer()),
   read_pending_(false),
   dropped_frames_(0) 
 {
@@ -53,6 +54,7 @@ LEDClient::~LEDClient() {
   ERR_LOG("esp_timer_delete", esp_timer_delete(connect_timer_));
   stop_prefetch_timer();
   ERR_LOG("esp_timer_delete", esp_timer_delete(prefetch_timer_));
+  stop_gpio();
   if (led_task_) {
     vTaskDelete(led_task_);
   }
@@ -78,6 +80,7 @@ void LEDClient::run_io(void* arg) {
 void IRAM_ATTR LEDClient::run_leds(void* arg) {
   auto c = reinterpret_cast<LEDClient*>(arg);
   c->spi_.reset(new SPI());
+  c->stop_gpio();
   c->start_gpio();
   ets_isr_mask(1ULL << XT_TIMER_INTNUM);
   while (true) {}
@@ -150,8 +153,6 @@ void LEDClient::state_ready(esp_event_base_t base, int32_t id, void* data) {
     case LED_EVENT_CONN_ACTIVE:
       ESP_LOGI(TAG, "State transition: %s -> %s on %d", "READY", "PREFETCH", id);
       state_ = PREFETCH;
-      xTaskCreatePinnedToCore(LEDClient::run_leds, "LED_LOOP", 2048, this,
-                              configMAX_PRIORITIES - 1, &led_task_, 1);
       start_prefetch_timer();
       read_pending_ = true;
       connection_->read_frame(*bufs_);
@@ -178,12 +179,13 @@ void LEDClient::state_prefetch(esp_event_base_t base, int32_t id, void* data) {
       on_conn_err();
       break;
     case LED_EVENT_PREFETCH_TIMER:
-      // Start led clock if rcv buffer is full
       if (bufs_->level() == bufs_->depth()) {
         ESP_LOGI(TAG, "State transition: %s -> %s on %d", "PREFETCH", "ACTIVE", id);
         state_ = ACTIVE;
         advance_frame();
-        led_clock_.reset(new SquareWaveGenerator<W * 16, PIN_CLOCK_GEN>());
+        xTaskCreatePinnedToCore(LEDClient::run_leds, "LED_LOOP", 2048, this,
+                                configMAX_PRIORITIES - 1, &led_task_, 1);
+//        gpio_intr_enable(PIN_CLOCK_READ);
       } else {
         start_prefetch_timer();
       }
@@ -233,6 +235,7 @@ void LEDClient::state_active(esp_event_base_t base, int32_t id, void* data) {
 void LEDClient::on_got_ip() {
   try {
     ESP_LOGI(TAG, "Resetting client connection on IP change");
+    dropped_frames_ = 0;
     connection_.reset(new ServerConnection(
       ctx_,
       ntohl(wifi_.ip()), 
@@ -247,7 +250,7 @@ void LEDClient::on_got_ip() {
 
 void LEDClient::on_conn_err() {
   connection_.reset();
-  led_clock_.reset();
+  dropped_frames_ = 0;
   start_connect_timer();
 }
 
@@ -323,15 +326,17 @@ void LEDClient::advance_frame() {
 
 void LEDClient::start_gpio() {
   try {
+    ESP_LOGI(TAG, "Starting GPIO");
     gpio_config_t cfg = {};
     cfg.pin_bit_mask = 1ULL << PIN_CLOCK_READ;
     cfg.mode = GPIO_MODE_INPUT;
     cfg.pull_up_en = GPIO_PULLUP_DISABLE;
     cfg.pull_down_en = GPIO_PULLDOWN_ENABLE;
     cfg.intr_type = GPIO_INTR_POSEDGE;
-//    cfg.intr_type = GPIO_INTR_DISABLE;
     ERR_THROW(gpio_config(&cfg));
-    gpio_install_isr_service(ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL3);
+    ERR_THROW(gpio_install_isr_service(ESP_INTR_FLAG_IRAM |
+                                      ESP_INTR_FLAG_LEVEL3));
+//    gpio_intr_disable(PIN_CLOCK_READ);
     gpio_isr_handler_add(PIN_CLOCK_READ, on_clock_isr, this);
   } catch (const std::exception& e) {
     ESP_LOGE(TAG, "%s", e.what());
@@ -339,7 +344,8 @@ void LEDClient::start_gpio() {
 }
 
 void LEDClient::stop_gpio() {
-  // TODO
+  gpio_isr_handler_remove(PIN_CLOCK_READ);
+  gpio_uninstall_isr_service();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////

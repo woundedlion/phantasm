@@ -8,6 +8,8 @@
 
 #include "Connection.h"
 #include "Effect.h"
+#include "FrameBuffer.h"
+#include "Types.h"
 
 struct IOThread {
   IOThread();
@@ -30,7 +32,6 @@ class LEDServer {
   void post_connection_error(std::shared_ptr<Connection> client);
   void post_client_ready(std::shared_ptr<Connection> client);
   bool is_shutdown() { return shutdown_; }
-
   void run(const Sequence& sequence);
   template <typename Effect, size_t secs>
   std::function<void()> play_secs();
@@ -39,13 +40,13 @@ class LEDServer {
   std::shared_ptr<IOThread> io_schedule();
   void accept();
   void subscribe_signals();
-  int get_slice(const std::string& client_id);
-  void send_frame();
-  void post_send_frame_complete();
+  int slice_index(const std::string& client_id);
+  void start_sending();
   bool all_clients_ready();
 
-  int frames_in_flight_;
   std::shared_ptr<Effect> effect_;
+  RGBFrameBuffer frames_;
+  uint64_t frame_num_;
   bool shutdown_;
   boost::asio::io_context main_io_;
   boost::asio::signal_set signals_;
@@ -54,25 +55,19 @@ class LEDServer {
   boost::asio::ip::tcp::endpoint accept_ep_;
   std::vector<std::shared_ptr<IOThread>> workers_;
   std::vector<std::shared_ptr<Connection>> clients_;
-  static const std::unordered_map<std::string, int> slices_;
 };
 
 template <typename EffectDerived, size_t secs>
 std::function<void()> LEDServer::play_secs() {
   return [this] {
-    auto effect = std::atomic_load(&effect_);
-    if (effect) {
-      effect->cancel();
-    }
-    std::atomic_exchange(&effect_,
-                         std::shared_ptr<Effect>(new EffectDerived()));
+    effect_ = std::make_shared<EffectDerived>();
     auto start = std::chrono::steady_clock::now();
     auto end = start + std::chrono::seconds(secs);
-    while (std::chrono::steady_clock::now() < end) {
-      if (is_shutdown()) {
-        return;
-      }
-      std::atomic_load(&effect_)->draw_frame();
+    while (!is_shutdown() && std::chrono::steady_clock::now() < end) {
+      auto frame =
+          std::make_shared<RGBFrameBuffer::Frame>();
+      effect_->draw_frame(*frame);
+      frames_.push(frame_num_++, frame);
     }
   };
 }

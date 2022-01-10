@@ -16,10 +16,10 @@ namespace {
 const char* TAG = "LEDServer";
 }  // namespace
 
-const std::unordered_map<std::string, int> LEDServer::slices_ = {
-    //    {"24-0a-c4-c0-6b-f0", 0},
-    //    {"24-0a-c4-c0-66-b8", 1},
-    {"24-0a-c4-c0-4b-6c", 2}};
+const char * Config::_slices[Config::SLICE_COUNT] = {"24-0a-c4-c0-6b-f0",
+                     //  "24-0a-c4-c0-66-b8",
+                     //"24-0a-c4-c0-4b-6c"
+};
 
 IOThread::IOThread()
     : guard_(make_work_guard(ctx_)), thread_([this]() {
@@ -31,7 +31,7 @@ IOThread::IOThread()
       }) {}
 
 LEDServer::LEDServer()
-    : frames_in_flight_(0),
+    : frame_num_(0),
       shutdown_(false),
       signals_(main_io_, SIGINT, SIGTERM),
       accept_sock_(main_io_, tcp::endpoint(tcp::v4(), 5050)) {}
@@ -75,16 +75,13 @@ void LEDServer::post_drop_client(std::shared_ptr<Connection> client) {
 }
 
 void LEDServer::post_connection_error(std::shared_ptr<Connection> client) {
-  post(main_io_, [this, client]() {
-    clients_.clear();
-    frames_in_flight_ = 0;
-  });
+  post(main_io_, [this, client]() { clients_.clear(); });
 }
 
 bool LEDServer::all_clients_ready() {
-  for (auto& slice : slices_) {
+  for (auto& slice : Config::_slices) {
     if (std::find_if(clients_.begin(), clients_.end(), [&](auto& client) {
-          return client->id_str() == slice.first && client->ready();
+          return client->id_str() == slice && client->ready();
         }) == clients_.end()) {
       return false;
     }
@@ -104,13 +101,13 @@ void LEDServer::post_client_ready(std::shared_ptr<Connection> client) {
       post_connection_error(client);
       return;
     }
-    if (slices_.find(client->id_str()) == slices_.end()) {
+    if (std::find(Config::_slices, std::end(Config::_slices), client->id_str()) ==
+        std::end(Config::_slices)) {
       post_drop_client(client);
       return;
     }
     if (all_clients_ready()) {
-      frames_in_flight_ = 0;
-      send_frame();
+      start_sending();
     }
   });
 }
@@ -133,6 +130,7 @@ void LEDServer::accept() {
           socket_base::send_buffer_size option(1024000);
           client_sock.set_option(option);
           auto c = std::make_shared<Connection>(*this, client_sock, io);
+          c->read_header();
           clients_.emplace_back(std::move(c));
           accept();
         } else {
@@ -150,40 +148,23 @@ void LEDServer::subscribe_signals() {
     if (!ec) {
       LOG(info) << "Received signal " << signal_number;
       shutdown_ = true;
-      auto effect = std::atomic_load(&effect_);
-      if (effect) effect->cancel();
+      frames_.cancel();
     } else {
       LOG(error) << "Signal listen error: " << ec.message();
     }
   });
 }
 
-int LEDServer::get_slice(const std::string& client_id) {
-  return slices_.at(client_id);
+int LEDServer::slice_index(const std::string& client_id) {
+  auto iter = std::find(Config::_slices, std::end(Config::_slices), client_id);
+  assert(iter != std::end(Config::_slices));
+  return std::distance(Config::_slices, iter);
 }
 
-void LEDServer::send_frame() {
-  while (!shutdown_) {
-    auto effect = std::atomic_load(&effect_);
-    while (!shutdown_ && !effect->wait_frame_available()) {
-      effect = std::atomic_load(&effect_);
-    }
-    for (auto& c : clients_) {
-      LOG(debug) << "Sending frame " << effect->frame_count()
-                 << " to client id " << c->id_str();
-      c->post_send(effect->buf(get_slice(c->id_str())),
-                   [this]() { this->post_send_frame_complete(); });
-    }
-    effect->advance_frame();
+void LEDServer::start_sending() {
+  for (auto& c : clients_) {
+    c->start_send(frames_, slice_index(c->id_str()));
   }
-}
-
-void LEDServer::post_send_frame_complete() {
-  post(main_io_, [&]() {
-    if (--frames_in_flight_ == 0) {
-      send_frame();
-    }
-  });
 }
 
 void LEDServer::run(const Sequence& sequence) {
@@ -204,8 +185,9 @@ int main(int argc, char* argv[]) {
   LEDServer server;
   server.start();
   Sequence show = {
-      server.play_secs<Test, 10>(), server.play_secs<RainbowHSV, 10>(),
-      server.play_secs<RainbowTwistHSV, 10>(),
+      server.play_secs<Test, 10>(),
+      //      server.play_secs<RainbowHSV, 10>(),
+      //     server.play_secs<RainbowTwistHSV, 10>(),
       //    server.play_secs<RainbowHSL, 3>(),
   };
   while (!server.is_shutdown()) {
